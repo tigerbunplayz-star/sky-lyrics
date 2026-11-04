@@ -51,6 +51,7 @@ class NetworkLyricsTest {
 		// A pasted link (the Saki & Baleszko - TOP 1 video).
 		report.add("Linked video UPA6XHXopzY");
 		report.add("  youtube: " + describe(() -> youtube.lookupVideo("UPA6XHXopzY", 0)));
+		report.add("  debug: " + youtube.debugVideo("UPA6XHXopzY"));
 
 		Path out = Path.of("build", "net-test.txt");
 		Files.createDirectories(out.getParent());

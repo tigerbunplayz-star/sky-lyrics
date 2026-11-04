@@ -208,6 +208,35 @@ public final class YtMusicLyricsClient {
 		return null;
 	}
 
+	/** Structure-only summary of how a video resolves (for the CI check; no lyric text). */
+	public String debugVideo(String videoId) {
+		try {
+			JsonObject next = next(videoId);
+			StringBuilder sb = new StringBuilder();
+			sb.append("lyricsTab=").append(lyricsBrowseId(next) != null);
+			List<String> cps = counterparts(next, videoId);
+			sb.append(" counterparts=").append(cps);
+			for (String c : cps) sb.append(" [").append(c).append(" lyricsTab=").append(lyricsBrowseId(c) != null).append(']');
+			String[] info = videoInfo(next, videoId);
+			sb.append(" info=").append(info == null ? "null" : info[0] + " | " + info[1]);
+			JsonArray tabs = arr(nav(next, "contents", "singleColumnMusicWatchNextResultsRenderer", "tabbedRenderer",
+					"watchNextTabbedResultsRenderer", "tabs"));
+			sb.append(" tabs=").append(tabs == null ? "none" : tabs.size());
+			if (tabs != null) for (JsonElement t : tabs) {
+				JsonObject tr = obj(nav(t, "tabRenderer"));
+				sb.append(" {").append(tr == null ? "?" : str(nav(tr, "title"))).append(tr != null && tr.has("unselectable") ? " unselectable" : "").append('}');
+			}
+			if (info != null) {
+				Hit hit = findSong(new NowPlaying(info[0], info[1], "", 0, 0, true, 0));
+				sb.append(" search=").append(hit == null ? "none" : hit.videoId() + " '" + hit.title() + "'");
+				if (hit != null) sb.append(" hitLyricsTab=").append(lyricsBrowseId(hit.videoId()) != null);
+			}
+			return sb.toString();
+		} catch (Exception e) {
+			return "ERROR " + e;
+		}
+	}
+
 	/** Video ids of the other version (song ⇄ music video) mentioned in a "next" response. */
 	static List<String> counterparts(JsonElement el, String self) {
 		List<String> out = new ArrayList<>();
