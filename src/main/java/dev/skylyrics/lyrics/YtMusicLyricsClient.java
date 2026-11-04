@@ -165,7 +165,7 @@ public final class YtMusicLyricsClient {
 			boolean durationKnown = wantS > 0 && h.durationS() > 0;
 			double diff = durationKnown ? Math.abs(h.durationS() - wantS) : 0;
 
-			if (!titleMatch && !artistMatch) continue;
+			if (!titleMatch) continue; // the title must match; the artist only adds confidence
 			if (durationKnown && diff > MAX_DURATION_DIFF_S * 3) continue;
 
 			int score = (titleMatch ? 100 : 0) + (artistMatch ? 80 : 0) - (int) Math.min(60, diff * 4) - i;
