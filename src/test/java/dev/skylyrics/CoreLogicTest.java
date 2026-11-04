@@ -51,6 +51,13 @@ class CoreLogicTest {
 	}
 
 	@Test
+	void musicNoteLinesCountAsBreaks() {
+		Lyrics l = LrcParser.parse("[00:00.00]\u266A\n[00:12.00]Words here");
+		assertTrue(l.get(0).isBlank());
+		assertEquals(12_000, l.firstLineTime());
+	}
+
+	@Test
 	void appliesOffsetTag() {
 		Lyrics l = LrcParser.parse("[offset:+500]\n[00:10.00]Hi");
 		assertEquals(9500, l.get(0).timeMs());

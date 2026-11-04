@@ -3,7 +3,7 @@
 A Fabric mod for Minecraft **26.2** that shows the lyrics of whatever you're playing in Spotify as big, colourful 3D words popping up around you in the world, synced to the music.
 
 - Reads the song straight from Windows' media controls: **no Spotify login, developer app or Premium needed**. Just have the Spotify desktop app playing.
-- Synced lyrics come from [LRCLIB](https://lrclib.net), a free lyrics database. Hungarian and other accented songs work, including when the database spells them without accents.
+- Synced lyrics come from [LRCLIB](https://lrclib.net), a free lyrics database, and, when LRCLIB has no synced version, from YouTube Music, which has synced lyrics for most songs (including lots of Hungarian ones). Accented songs work, even when a database spells them without accents.
 - Songs that only have plain (untimed) lyrics, common for Hungarian music, still show: the timing is estimated, and you can line it up with the sync key.
 - Each line is cut into short word groups that pop up as they're sung, scattered left, right, near and far, in chunky 3D block letters.
 - Every group gets its own bright colour with a soft gradient and shimmer, and the words gently bob and sway.
@@ -50,11 +50,14 @@ Edit `.minecraft/config/skylyrics.json` (created on first launch), then restart 
 | `offsetMs` | `0` | Timing shift (also set with `[` / `]`) |
 | `player` | `"spotify"` | Which app to read; `"*"` uses whatever is playing (browsers, other players) |
 | `estimateUnsyncedLyrics` | `true` | Show plain-only lyrics with estimated timing |
+| `youtubeMusicLyrics` | `true` | Also look on YouTube Music when LRCLIB has no synced lyrics |
+| `youtubeRegion` | `""` | Country for YouTube Music lyrics (licensed per country); empty = your system's country |
 
 ## Notes
 
 - Windows 10/11 only (it uses the system media controls through a small PowerShell helper that the mod starts and stops automatically).
 - If a song shows "no synced lyrics found", LRCLIB has no lyrics for it at all. Songs with only plain lyrics show with estimated timing. Synced lyrics can be contributed to lrclib.net.
+- YouTube Music lyrics come through YouTube Music's unofficial app interface (the same approach as the open-source ytmusicapi). YouTube doesn't officially offer it, so it may stop working if they change it; LRCLIB keeps working either way. Turn it off with `youtubeMusicLyrics: false`.
 - Fonts: Archivo Black and Lobster, both under the SIL Open Font License (see `licenses/`).
 
 ## Building
