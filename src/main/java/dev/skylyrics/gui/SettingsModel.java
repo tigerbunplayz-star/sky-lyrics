@@ -115,6 +115,16 @@ public final class SettingsModel {
 
 		/** Start recording, or stop and save. */
 		void toggleRecording();
+
+		/** The YouTube link saved for the song playing now, or null. */
+		String linkedVideo();
+
+		/** Link the YouTube link on the clipboard to the song playing now. */
+		void pasteLink();
+
+		void removeLink();
+
+		boolean hasSong();
 	}
 
 	/** A sample word drawn with the current colours. */
@@ -218,6 +228,15 @@ public final class SettingsModel {
 							String f = a.currentFileName();
 							return f == null ? "play a song first" : f;
 						}),
+				new Info("Linked video", "The YouTube video whose lyrics this song uses",
+						() -> {
+							String v = a.linkedVideo();
+							return v == null ? "none" : v;
+						}),
+				new Action("Use a YouTube video's lyrics", "Copy a YouTube or YouTube Music link, then click: this song will use that video's lyrics",
+						() -> "Paste link", a::hasSong, a::pasteLink, false),
+				new Action("Remove link", "Go back to finding lyrics automatically for this song",
+						() -> "Remove", () -> a.linkedVideo() != null, a::removeLink, false),
 				new Action("Lyrics folder", "Opens the folder (README.txt inside explains the format)",
 						() -> "Open", () -> true, a::openLyricsFolder, false),
 				new Action("Record timing", "Tap the sync key (;) at the start of every line; saves an .lrc file",

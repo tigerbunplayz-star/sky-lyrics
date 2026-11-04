@@ -38,4 +38,15 @@ class YtMusicParsingTest {
 		assertEquals(219.0, hits.get(0).durationS(), 0.001);
 		assertEquals(3725.0, hits.get(1).durationS(), 0.001);
 	}
+
+	@Test
+	void readsVideoIdsFromLinks() {
+		assertEquals("UPA6XHXopzY", YtMusicLyricsClient.videoIdFromLink("https://www.youtube.com/watch?v=UPA6XHXopzY"));
+		assertEquals("UPA6XHXopzY", YtMusicLyricsClient.videoIdFromLink("https://youtu.be/UPA6XHXopzY?si=abc"));
+		assertEquals("UPA6XHXopzY", YtMusicLyricsClient.videoIdFromLink("https://music.youtube.com/watch?v=UPA6XHXopzY&list=RD123"));
+		assertEquals("UPA6XHXopzY", YtMusicLyricsClient.videoIdFromLink("https://www.youtube.com/shorts/UPA6XHXopzY"));
+		assertEquals("UPA6XHXopzY", YtMusicLyricsClient.videoIdFromLink("  UPA6XHXopzY "));
+		assertEquals(null, YtMusicLyricsClient.videoIdFromLink("https://example.com/watch?v=UPA6XHXopzY"));
+		assertEquals(null, YtMusicLyricsClient.videoIdFromLink("hello"));
+	}
 }

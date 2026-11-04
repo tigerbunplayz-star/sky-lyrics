@@ -66,22 +66,8 @@ public final class YtMusicLyricsClient {
 		try {
 			Hit hit = findSong(np);
 			if (hit == null) return LyricsResult.of(LyricsResult.Kind.NOT_FOUND);
-
-			String browseId = lyricsBrowseId(hit.videoId());
-			if (browseId == null) return LyricsResult.of(LyricsResult.Kind.NOT_FOUND);
-
-			Lyrics timed = timedLyrics(browseId);
-			if (timed != null && !timed.isEmpty()) return LyricsResult.synced(timed);
-
-			String plain = plainLyrics(browseId);
-
-			if (plain != null && !plain.isBlank()) {
-				long dur = np.durationMs() > 0 ? np.durationMs() : Math.round(hit.durationS() * 1000);
-				Lyrics estimated = PlainLyricsEstimator.estimate(plain, dur);
-				if (!estimated.isEmpty()) return new LyricsResult(LyricsResult.Kind.ESTIMATED, estimated);
-			}
-
-			return LyricsResult.of(LyricsResult.Kind.NOT_FOUND);
+			long dur = np.durationMs() > 0 ? np.durationMs() : Math.round(hit.durationS() * 1000);
+			return lyricsForVideo(hit.videoId(), dur);
 		} catch (IOException e) {
 			LOG.warn("[Sky Lyrics] YouTube Music lookup failed for '{}' by '{}': {}", np.title(), np.artist(), e.toString());
 			throw new RuntimeException(e);
@@ -89,6 +75,49 @@ public final class YtMusicLyricsClient {
 			Thread.currentThread().interrupt();
 			throw new RuntimeException(e);
 		}
+	}
+
+	/** Lyrics of one specific YouTube / YouTube Music video (from a link the player pasted). */
+	public LyricsResult lookupVideo(String videoId, long durationMs) {
+		try {
+			return lyricsForVideo(videoId, durationMs);
+		} catch (IOException e) {
+			LOG.warn("[Sky Lyrics] YouTube Music lookup failed for video {}: {}", videoId, e.toString());
+			throw new RuntimeException(e);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new RuntimeException(e);
+		}
+	}
+
+	private LyricsResult lyricsForVideo(String videoId, long durationMs) throws IOException, InterruptedException {
+		String browseId = lyricsBrowseId(videoId);
+		if (browseId == null) return LyricsResult.of(LyricsResult.Kind.NOT_FOUND);
+
+		Lyrics timed = timedLyrics(browseId);
+		if (timed != null && !timed.isEmpty()) return LyricsResult.synced(timed);
+
+		String plain = plainLyrics(browseId);
+
+		if (plain != null && !plain.isBlank()) {
+			Lyrics estimated = PlainLyricsEstimator.estimate(plain, durationMs);
+			if (!estimated.isEmpty()) return new LyricsResult(LyricsResult.Kind.ESTIMATED, estimated);
+		}
+
+		return LyricsResult.of(LyricsResult.Kind.NOT_FOUND);
+	}
+
+	private static final Pattern VIDEO_ID = Pattern.compile(
+			"(?:v=|/shorts/|youtu\\.be/|/embed/|/live/)([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])");
+
+	/** The 11-character video id from a YouTube / YouTube Music / youtu.be link, or null. */
+	public static String videoIdFromLink(String link) {
+		if (link == null) return null;
+		String t = link.strip();
+		if (t.matches("[A-Za-z0-9_-]{11}")) return t;
+		if (!t.contains("youtu")) return null;
+		Matcher m = VIDEO_ID.matcher(t);
+		return m.find() ? m.group(1) : null;
 	}
 
 	/** Search for the song and pick the result whose title, artist and length match best. */

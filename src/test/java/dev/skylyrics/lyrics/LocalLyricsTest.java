@@ -34,14 +34,14 @@ class LocalLyricsTest {
 		assertTrue(Files.exists(dir.resolve("README.txt")));
 		assertNull(local.find(song("Nothing Here", "Nobody")));
 
-		Files.writeString(dir.resolve("saki and baleszko - top 1.lrc"), "[00:10.00]made up line one\n[00:14.50]made up line two\n");
+		Files.writeString(dir.resolve("saki and baleszko - Top 1.lrc"), "[00:10.00]made up line one\n[00:14.50]made up line two\n");
 		LyricsResult r = local.find(song("TOP 1", "Saki & Baleszko"));
 		assertNotNull(r);
 		assertEquals(LyricsResult.Kind.SYNCED, r.kind());
 		assertEquals(10_000, r.lyrics().firstLineTime());
 
-		Files.writeString(dir.resolve("Árvíztűrő.txt"), "egy sor\nmásik sor\n", StandardCharsets.UTF_8);
-		LyricsResult plain = local.find(song("Arvizturo", "Someone"));
+		Files.writeString(dir.resolve("Arvizturo.txt"), "egy sor\nmásik sor\n", StandardCharsets.UTF_8);
+		LyricsResult plain = local.find(song("Árvíztűrő", "Someone"));
 		assertNotNull(plain);
 		assertEquals(LyricsResult.Kind.ESTIMATED, plain.kind());
 		assertEquals("egy sor", plain.lyrics().get(0).text());

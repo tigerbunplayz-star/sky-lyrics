@@ -108,8 +108,8 @@ public final class LocalLyrics {
 	private Path match(NowPlaying np) {
 		if (!Files.isDirectory(dir)) return null;
 
-		String full = TitleCleaner.normalize(np.artist() + " - " + np.title());
-		String main = TitleCleaner.normalize(TitleCleaner.primaryArtist(np.artist()) + " - " + TitleCleaner.cleanTitle(np.title()));
+		String full = key(np.artist() + " - " + np.title());
+		String main = key(TitleCleaner.primaryArtist(np.artist()) + " - " + TitleCleaner.cleanTitle(np.title()));
 		String title = TitleCleaner.normalize(np.title());
 		String cleanTitle = TitleCleaner.normalize(TitleCleaner.cleanTitle(np.title()));
 
@@ -124,7 +124,7 @@ public final class LocalLyrics {
 				if (!(lower.endsWith(".lrc") || lower.endsWith(".txt")) || lower.equals("readme.txt")) continue;
 				if (!Files.isRegularFile(f)) continue;
 
-				String stem = TitleCleaner.normalize(name.substring(0, name.lastIndexOf('.')));
+				String stem = key(name.substring(0, name.lastIndexOf('.')));
 				if (stem.isEmpty()) continue;
 
 				if (stem.equals(full) || stem.equals(main)) {
@@ -142,6 +142,12 @@ public final class LocalLyrics {
 		}
 
 		return byArtistAndTitle != null ? byArtistAndTitle : (byTags != null ? byTags : byTitleOnly);
+	}
+
+	/** Loose name key: "&", "and" and "és" count as the same; case, accents and punctuation ignored. */
+	static String key(String s) {
+		String t = s == null ? "" : s.replaceAll("(?i)\\s+(?:&|and|\u00E9s|es)\\s+", " & ");
+		return TitleCleaner.normalize(t);
 	}
 
 	/** An .lrc whose [ar:] and [ti:] tags name this song, whatever the file is called. */

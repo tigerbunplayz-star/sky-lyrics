@@ -20,6 +20,7 @@ public final class LyricsService {
 	private static final Logger LOG = LoggerFactory.getLogger("skylyrics");
 
 	private final LocalLyrics local;
+	private final LinkStore links;
 	private final LrcLibClient lrclib;
 	private final YtMusicLyricsClient youtube;
 	private final BooleanSupplier useYoutube;
@@ -30,8 +31,10 @@ public final class LyricsService {
 		return t;
 	});
 
-	public LyricsService(LocalLyrics local, LrcLibClient lrclib, YtMusicLyricsClient youtube, BooleanSupplier useYoutube) {
+	public LyricsService(LocalLyrics local, LinkStore links, LrcLibClient lrclib, YtMusicLyricsClient youtube,
+			BooleanSupplier useYoutube) {
 		this.local = local;
+		this.links = links;
 		this.lrclib = lrclib;
 		this.youtube = youtube;
 		this.useYoutube = useYoutube;
@@ -53,7 +56,21 @@ public final class LyricsService {
 			LyricsResult cached = cache.get(key);
 			if (cached != null) return cached;
 
-			LyricsResult result = lookup(np);
+			LyricsResult result = null;
+			String videoId = links.videoId(np);
+
+			// A YouTube link the player pasted for this song comes next.
+			if (videoId != null) {
+				try {
+					LyricsResult linked = youtube.lookupVideo(videoId, np.durationMs());
+					if (linked.kind() != LyricsResult.Kind.NOT_FOUND) result = linked;
+					else LOG.info("[Sky Lyrics] The linked video for '{}' has no lyrics on YouTube Music", np.title());
+				} catch (RuntimeException e) {
+					// fall back to the normal lookup
+				}
+			}
+
+			if (result == null) result = lookup(np);
 			// Only cache when a source actually answered, so a network hiccup can be retried.
 			if (result != null) cache.put(key, result);
 			return result;

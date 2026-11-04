@@ -20,6 +20,7 @@ import net.fabricmc.loader.api.FabricLoader;
 
 import dev.skylyrics.gui.SkyLyricsScreen;
 import dev.skylyrics.gui.SettingsModel;
+import dev.skylyrics.lyrics.LinkStore;
 import dev.skylyrics.lyrics.LocalLyrics;
 import dev.skylyrics.lyrics.LrcLibClient;
 import dev.skylyrics.lyrics.Lyrics;
@@ -39,6 +40,7 @@ public final class SkyLyricsClient implements ClientModInitializer {
 	private LyricsEngine engine;
 	private LyricsService lyrics;
 	private LocalLyrics localLyrics;
+	private LinkStore links;
 	private SkyLyricsRenderer renderer;
 
 	private KeyMapping toggleKey;
@@ -59,7 +61,8 @@ public final class SkyLyricsClient implements ClientModInitializer {
 		LrcLibClient lrclib = new LrcLibClient(version);
 		YtMusicLyricsClient youtube = new YtMusicLyricsClient(config.youtubeRegion());
 		localLyrics = new LocalLyrics(configDir.resolve("skylyrics").resolve("lyrics"));
-		lyrics = new LyricsService(localLyrics, lrclib, youtube, () -> config.youtubeMusicLyrics);
+		links = new LinkStore(localLyrics.dir().resolve("links.json"));
+		lyrics = new LyricsService(localLyrics, links, lrclib, youtube, () -> config.youtubeMusicLyrics);
 		engine = new LyricsEngine(lyrics::fetch);
 		renderer = new SkyLyricsRenderer(() -> config, engine);
 
@@ -109,6 +112,44 @@ public final class SkyLyricsClient implements ClientModInitializer {
 				return engine.isRecording();
 			}
 
+			public String linkedVideo() {
+				NowPlaying np = engine.currentTrack();
+				String id = np == null ? null : links.videoId(np);
+				return id == null ? null : "youtu.be/" + id;
+			}
+
+			public boolean hasSong() {
+				return engine.currentTrack() != null;
+			}
+
+			public void pasteLink() {
+				NowPlaying np = engine.currentTrack();
+				if (np == null) {
+					renderer.showNotice("Play the song first");
+					return;
+				}
+
+				String id = YtMusicLyricsClient.videoIdFromLink(clipboard());
+				if (id == null) {
+					renderer.showNotice("Copy a YouTube link first (youtube.com/watch?v=... or youtu.be/...)", 3_000_000_000L);
+					return;
+				}
+
+				links.put(np, id);
+				lyrics.clearCache();
+				engine.refetch();
+				renderer.showNotice("Linked! Getting that video's lyrics\u2026", 2_500_000_000L);
+			}
+
+			public void removeLink() {
+				NowPlaying np = engine.currentTrack();
+				if (np != null && links.remove(np)) {
+					lyrics.clearCache();
+					engine.refetch();
+					renderer.showNotice("Link removed");
+				}
+			}
+
 			public void toggleRecording() {
 				if (engine.isRecording()) {
 					finishRecording();
@@ -119,6 +160,16 @@ public final class SkyLyricsClient implements ClientModInitializer {
 				}
 			}
 		};
+	}
+
+	/** Text on the clipboard (GLFW, on the render thread where the game window is current). */
+	private static String clipboard() {
+		try {
+			long window = GLFW.glfwGetCurrentContext();
+			return window == 0L ? null : GLFW.glfwGetClipboardString(window);
+		} catch (RuntimeException e) {
+			return null;
+		}
 	}
 
 	/** Stop the recorder and save the timed lines to the lyrics folder. */
