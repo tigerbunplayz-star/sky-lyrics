@@ -24,6 +24,7 @@ A Fabric mod for Minecraft **26.2** that shows the lyrics of whatever you're pla
 | `[` | Lyrics timing earlier (+100 ms) |
 | `]` | Lyrics timing later (−100 ms) |
 | `;` | Sync: press the moment you hear a line start (fixes estimated timing for the current song) |
+| `O` | Open the settings menu |
 
 On a Hungarian keyboard these keys are `ő`, `ú` and `é`.
 
@@ -31,7 +32,9 @@ Rebind them in Options → Controls → Key Binds → Sky Lyrics.
 
 ## Settings
 
-Edit `.minecraft/config/skylyrics.json` (created on first launch), then restart the game.
+Press `O` in game for the settings menu: toggles, sliders for size, distance, height, spread, animation speed and fade timing, plus font and colour choices. Changes show live on the words around you (sample words appear if nothing is playing). Save keeps them, Cancel or Esc undoes them.
+
+Everything is also in `.minecraft/config/skylyrics.json` (created on first launch) if you prefer editing the file; restart the game after editing it.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -45,7 +48,8 @@ Edit `.minecraft/config/skylyrics.json` (created on first launch), then restart 
 | `spread` | `36` | How far left/right of your view words appear (degrees) |
 | `distanceMin` / `distanceMax` | `24` / `36` | How far away words appear (blocks) |
 | `heightMin` / `heightMax` | `-1` / `8` | Height above your eyes (blocks). Raise both (e.g. `18` / `30`) to put the lyrics up in the sky |
-| `holdMs` | `2200` | How long a line stays after the next one starts |
+| `holdMs` | `2200` | How long a line stays after the next one starts before fading |
+| `animationSpeed` | `1.0` | Speed of the pop-in, fade-out and floating |
 | `maxWordsPerGroup` / `maxCharsPerGroup` | `3` / `12` | How lines are cut into groups |
 | `offsetMs` | `0` | Timing shift (also set with `[` / `]`) |
 | `player` | `"spotify"` | Which app to read; `"*"` uses whatever is playing (browsers, other players) |
