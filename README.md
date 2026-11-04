@@ -36,6 +36,16 @@ Put `.lrc` (timed) or `.txt` (plain) files in `.minecraft/config/skylyrics/lyric
 
 If a song's lyrics aren't found (or the wrong version is picked), copy a YouTube / YouTube Music link of that song, open the menu while it plays and click **My lyrics → Paste link**. The mod remembers the link and uses that video's lyrics every time the song plays (`links.json` in the same folder; only the link is stored).
 
+## AI lyric maker (beta)
+
+For songs that have no lyrics anywhere, the menu's **AI maker** tab can write them:
+
+1. **Install** once: downloads a private Python with Demucs (separates the singing from the instruments) and Whisper (speech recognition), about 2 GB, into `%LOCALAPPDATA%\SkyLyrics\ai`. Nothing is installed system-wide.
+2. Start the song from the beginning, click **Make lyrics → Start**, and let the song play to the end. The AI listens to your PC's sound (your music plays normally the whole time).
+3. When the song ends it separates the vocals, recognises the words and their timings, and saves `Artist - Title.lrc` in your lyrics folder. That takes a few minutes; the song then has lyrics every time it plays.
+
+AI lyrics are guesses (rap and fast songs especially), so open the file and fix mistakes, or re-time it with the recorder. The recording is deleted afterwards and nothing is uploaded. Recording music from Spotify isn't something Spotify's terms allow, so this is for your own personal use.
+
 ## Settings
 
 Press `O` in game for the settings menu: toggles, sliders for size, distance, height, spread, animation speed and fade timing, plus font choice. The **Colors** tab switches between **Original** (the colourful palettes, the default) and **Custom**, where you pick any colour with a colour picker and can fade the letters into a second colour. Changes show live on the words around you (sample words appear if nothing is playing). Save keeps them, Cancel or Esc undoes them. **Restart** saves, restarts the Spotify reader and downloads the current song's lyrics again: handy after switching which app to read, or if lyrics seem stuck. No game restart is ever needed.

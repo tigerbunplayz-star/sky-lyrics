@@ -274,7 +274,7 @@ public final class SettingsModel {
 				new Note("AI lyrics are guesses: rap and fast songs get mistakes, so fix the .lrc file after. It listens to your PC's sound while the song plays; nothing is uploaded and the recording is deleted.",
 						"", "BETA"),
 				new Info("Status", "What the AI is doing", a::aiStatus),
-				new Action("Install the AI", "One-time download of about 1 to 1.5 GB (Python, Demucs, Whisper); takes a few minutes",
+				new Action("Install the AI", "One-time install of about 2 GB (Python, Demucs, Whisper); takes a few minutes",
 						() -> a.aiInstalled() ? "Reinstall" : "Install", () -> !a.aiBusy(), a::aiInstall, false),
 				new Action("Make lyrics for this song", "Start the song from the beginning, click Start, let it play to the end; the AI then works for a few minutes",
 						() -> a.aiListening() ? "Stop & make" : "Start", () -> a.aiListening() || (a.aiInstalled() && !a.aiBusy() && a.hasSong()),
