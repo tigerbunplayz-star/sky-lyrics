@@ -127,6 +127,12 @@ public final class AiLyricsMaker {
 			return false;
 		}
 
+		try {
+			Files.deleteIfExists(stopFile());
+		} catch (IOException ignored) {
+			// it will be overwritten
+		}
+
 		songKey = np.trackKey();
 		songTitle = np.title();
 		state = State.LISTENING;
@@ -137,7 +143,7 @@ public final class AiLyricsMaker {
 				"--make", "--out", outFile.toString(), "--offset", Long.toString(Math.max(0, positionMs)),
 				"--max", Long.toString(Math.max(30, maxSeconds)), "--models", home.resolve("models").toString(),
 				"--model", model, "--lang", language, "--title", np.title(), "--artist", np.artist(),
-				"--parent-pid", Long.toString(ProcessHandle.current().pid())));
+				"--parent-pid", Long.toString(ProcessHandle.current().pid()), "--stop-file", stopFile().toString()));
 
 		run(cmd, line -> {
 			if (line.startsWith("DONE ")) {
@@ -160,11 +166,17 @@ public final class AiLyricsMaker {
 		message = "starting";
 
 		try {
+			Files.writeString(stopFile(), "stop");
+		} catch (IOException e) {
+			LOG.warn("[Sky Lyrics] Couldn't write the AI stop file: {}", e.toString());
+		}
+
+		try { // backup signal
 			OutputStream in = p.getOutputStream();
 			in.write("stop\n".getBytes(StandardCharsets.UTF_8));
 			in.flush();
-		} catch (IOException e) {
-			fail("couldn't stop the recording");
+		} catch (IOException ignored) {
+			// the stop file does the job
 		}
 	}
 
@@ -259,6 +271,10 @@ public final class AiLyricsMaker {
 		}, "SkyLyrics AI errors");
 		t.setDaemon(true);
 		t.start();
+	}
+
+	private Path stopFile() {
+		return home.resolve("stop.signal");
 	}
 
 	private Path python() {

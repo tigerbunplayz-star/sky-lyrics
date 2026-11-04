@@ -111,6 +111,31 @@ public final class SkyLyricsClient implements ClientModInitializer {
 				}
 			}
 
+			public void editLyricsFile() {
+				NowPlaying np = engine.currentTrack();
+				if (np == null) {
+					renderer.showNotice("Play the song first");
+					return;
+				}
+
+				java.nio.file.Path dir = localLyrics.dir();
+				java.nio.file.Path lrc = dir.resolve(LocalLyrics.fileName(np.artist(), np.title()));
+				java.nio.file.Path txt = dir.resolve(lrc.getFileName().toString().replaceAll("\\.lrc$", ".txt"));
+				java.nio.file.Path file = !java.nio.file.Files.exists(lrc) && java.nio.file.Files.exists(txt) ? txt : lrc;
+
+				try {
+					if (!java.nio.file.Files.exists(file)) {
+						java.nio.file.Files.createDirectories(dir);
+						java.nio.file.Files.writeString(file, "[ar:" + np.artist() + "]\n[ti:" + np.title() + "]\n", java.nio.charset.StandardCharsets.UTF_8);
+					}
+					if (WindowsMediaSource.isSupported()) new ProcessBuilder("notepad.exe", file.toAbsolutePath().toString()).start();
+					renderer.showNotice("Opened " + file.getFileName() + " \u2013 press Restart after saving", 3_500_000_000L);
+				} catch (java.io.IOException e) {
+					LOG.warn("[Sky Lyrics] Couldn't open the lyrics file: {}", e.toString());
+					renderer.showNotice("Couldn't open the lyrics file");
+				}
+			}
+
 			public boolean canRecord() {
 				return engine.canRecord();
 			}

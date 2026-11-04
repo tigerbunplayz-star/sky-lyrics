@@ -119,6 +119,9 @@ public final class SettingsModel {
 
 		void openLyricsFolder();
 
+		/** Open this song's lyrics file in Notepad (created with a header if it doesn't exist). */
+		void editLyricsFile();
+
 		boolean canRecord();
 
 		boolean isRecording();
@@ -262,6 +265,8 @@ public final class SettingsModel {
 						() -> "Paste link", a::hasSong, a::pasteLink, false),
 				new Action("Remove link", "Go back to finding lyrics automatically for this song",
 						() -> "Remove", () -> a.linkedVideo() != null, a::removeLink, false),
+				new Action("This song's lyrics file", "Opens it in Notepad (an .lrc file is plain text); press Restart after saving",
+						() -> "Edit", a::hasSong, a::editLyricsFile, false),
 				new Action("Lyrics folder", "Opens the folder (README.txt inside explains the format)",
 						() -> "Open", () -> true, a::openLyricsFolder, false),
 				new Action("Record timing", "Tap the sync key (;) at the start of every line; saves an .lrc file",

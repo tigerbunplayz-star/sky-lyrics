@@ -111,3 +111,23 @@ jobs:
           if ($first -lt 2.0 -or $first -gt 4.5) { throw "first line time is off: $report" }
           if ($second -lt 10.0 -or $second -gt 13.5) { throw "second sentence time is off: $report" }
           'all checks passed'
+
+      - name: full listen -> stop -> make flow (fake sound card)
+        shell: powershell
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'ai'
+          $py = Join-Path $dir 'python\python.exe'
+          $stop = Join-Path $env:RUNNER_TEMP 'stop.signal'
+          $env:SKYLYRICS_FAKE_AUDIO = (Resolve-Path test-song.wav).Path
+          $p = Start-Process $py -PassThru -NoNewWindow -RedirectStandardOutput make-out.txt -RedirectStandardError make-err.txt `
+            -ArgumentList (Join-Path $dir 'lyric_maker.py'),'--make','--out','make.lrc','--offset','0','--max','120','--models',(Join-Path $dir 'models'),'--lang','en','--stop-file',$stop
+          Start-Sleep -Seconds 23
+          Set-Content $stop 'stop'
+          if (-not $p.WaitForExit(300000)) { Stop-Process -Id $p.Id -Force; throw 'the maker did not finish within 5 minutes after stop' }
+          $out = (Get-Content make-out.txt | Where-Object { $_ -notmatch '^PROGRESS 0 listening' }) -join '%0A'
+          $err = (Get-Content make-err.txt | Select-String 'recorded ') -join ' '
+          Write-Output "::notice title=make flow::$out%0A$err"
+          if (-not (Test-Path make.lrc)) { throw "no lyrics written: $out $err" }
+          $text = (Get-Content make.lrc) -join ' '
+          if ($text -notmatch 'fox' -or $text -notmatch 'words') { throw "words missing: $text" }
+          'make flow ok'

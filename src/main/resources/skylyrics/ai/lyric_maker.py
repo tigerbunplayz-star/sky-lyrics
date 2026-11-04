@@ -35,56 +35,114 @@ def progress(pct, text):
 
 # ---------------------------------------------------------------------------- recording
 
-def record_loopback(out_wav, max_seconds, stop_event):
+class Stopper(object):
+    """Stop signal: a 'stop' line on stdin, or the stop file appearing (more reliable)."""
+
+    def __init__(self, stop_file):
+        self.event = threading.Event()
+        self.reason = ""
+        self.stop_file = stop_file
+
+    def stop(self, reason):
+        if not self.event.is_set():
+            self.reason = reason
+            self.event.set()
+
+    def is_set(self):
+        if not self.event.is_set() and self.stop_file and os.path.exists(self.stop_file):
+            self.stop("stop file")
+        return self.event.is_set()
+
+
+def fake_audio_chunks(path, rate, block):
+    """CI only (SKYLYRICS_FAKE_AUDIO): plays a wav file back in real time instead of a sound card."""
     import numpy as np
-    import soundcard as sc
+    import soundfile as sf
+    audio, sr = sf.read(path, dtype="float32", always_2d=True)
+    if sr != rate:
+        idx = np.arange(0, len(audio), sr / float(rate))
+        audio = np.stack([np.interp(idx, np.arange(len(audio)), audio[:, c]) for c in range(audio.shape[1])], 1)
+    if audio.shape[1] == 1:
+        audio = np.repeat(audio, 2, 1)
+    pos = 0
+    while True:
+        part = audio[pos:pos + block, :2]
+        if len(part) < block:
+            part = np.concatenate([part, np.zeros((block - len(part), 2), dtype=np.float32)])
+        pos += block
+        time.sleep(block / float(rate))
+        yield part.astype(np.float32)
+
+
+def record_loopback(out_wav, max_seconds, stopper):
+    import numpy as np
     import soundfile as sf
 
-    speaker = sc.default_speaker()
-    mic = sc.get_microphone(id=str(speaker.name), include_loopback=True)
     rate = 48000
+    block = rate // 4
     chunks = []
     started = time.time()
-    last_report = 0
+    last_report = -1
+    fake = os.environ.get("SKYLYRICS_FAKE_AUDIO")
 
-    with mic.recorder(samplerate=rate, channels=2, blocksize=4096) as rec:
-        while not stop_event.is_set() and time.time() - started < max_seconds:
-            data = rec.record(numframes=rate // 4)
-            chunks.append(np.asarray(data, dtype=np.float32))
+    def loop(next_chunk, device):
+        nonlocal last_report
+        while not stopper.is_set():
+            if time.time() - started >= max_seconds:
+                stopper.stop("time limit")
+                break
+            chunks.append(np.asarray(next_chunk(), dtype=np.float32)[:, :2])
             elapsed = int(time.time() - started)
             if elapsed != last_report:
                 last_report = elapsed
                 progress(0, "listening %d:%02d" % (elapsed // 60, elapsed % 60))
+        return device
+
+    if fake:
+        gen = fake_audio_chunks(fake, rate, block)
+        device = loop(lambda: next(gen), "fake audio file")
+    else:
+        import soundcard as sc
+        speaker = sc.default_speaker()
+        mic = sc.get_microphone(id=str(speaker.name), include_loopback=True)
+        with mic.recorder(samplerate=rate, channels=2, blocksize=4096) as rec:
+            device = loop(lambda: rec.record(numframes=block), speaker.name)
 
     audio = np.concatenate(chunks) if chunks else np.zeros((0, 2), dtype=np.float32)
     sf.write(out_wav, audio, rate, subtype="FLOAT")
-    return len(audio) / float(rate)
+    seconds = len(audio) / float(rate)
+    listened = time.time() - started
+    level = float(np.sqrt(np.mean(audio ** 2))) if len(audio) else 0.0
+    sys.stderr.write("recorded %.1f s in %.1f s, device=%s, stopped by %s, level=%.5f\n"
+                     % (seconds, listened, device, stopper.reason, level))
+    return seconds, listened, device, level
 
 
-def watch_stdin(stop_event):
+def watch_stdin(stopper):
     try:
         for line in sys.stdin:
             if line.strip().lower() == "stop":
-                stop_event.set()
+                stopper.stop("stop command")
                 return
     except Exception:
         pass
-    stop_event.set()  # stdin closed: the game went away
+    # stdin closed or unavailable: don't stop because of that (the stop file / parent watch handle it)
 
 
-def watch_parent(pid, stop_event, quit_event):
+def watch_parent(pid, stopper, quit_event):
     if not pid:
         return
     try:
         import ctypes
         kernel32 = ctypes.windll.kernel32
         SYNCHRONIZE = 0x00100000
+        kernel32.OpenProcess.restype = ctypes.c_void_p
         handle = kernel32.OpenProcess(SYNCHRONIZE, False, int(pid))
         if not handle:
             return
         while not quit_event.is_set():
-            if kernel32.WaitForSingleObject(handle, 1000) == 0:  # parent exited
-                stop_event.set()
+            if kernel32.WaitForSingleObject(ctypes.c_void_p(handle), 1000) == 0:  # parent exited
+                stopper.stop("game closed")
                 quit_event.set()
                 os._exit(0)
     except Exception:
@@ -279,6 +337,7 @@ def main():
     p.add_argument("--title", default="")
     p.add_argument("--artist", default="")
     p.add_argument("--parent-pid", type=int, default=0)
+    p.add_argument("--stop-file", default="")
     a = p.parse_args()
 
     os.makedirs(a.models, exist_ok=True)
@@ -294,16 +353,21 @@ def main():
             process(a.process, a.out, a.offset, a.models, a.model, a.lang, a.title, a.artist)
             return
         if a.make:
-            stop_event = threading.Event()
+            stopper = Stopper(a.stop_file)
+            if a.stop_file and os.path.exists(a.stop_file):
+                os.remove(a.stop_file)
             quit_event = threading.Event()
-            threading.Thread(target=watch_stdin, args=(stop_event,), daemon=True).start()
-            threading.Thread(target=watch_parent, args=(a.parent_pid, stop_event, quit_event), daemon=True).start()
+            threading.Thread(target=watch_stdin, args=(stopper,), daemon=True).start()
+            threading.Thread(target=watch_parent, args=(a.parent_pid, stopper, quit_event), daemon=True).start()
             fd, wav = tempfile.mkstemp(prefix="skylyrics-", suffix=".wav")
             os.close(fd)
             try:
-                seconds = record_loopback(wav, a.max, stop_event)
+                seconds, listened, device, level = record_loopback(wav, a.max, stopper)
                 if seconds < 5:
-                    raise RuntimeError("heard less than 5 seconds of sound")
+                    raise RuntimeError("only %.1f s of sound came in during %.0f s of listening (device: %s, stopped by: %s)"
+                                       % (seconds, listened, device, stopper.reason or "?"))
+                if level < 1e-4:
+                    raise RuntimeError("only silence was heard from '%s' - is Spotify playing through your default speakers/headphones?" % device)
                 process(wav, a.out, a.offset, a.models, a.model, a.lang, a.title, a.artist)
             finally:
                 try:
