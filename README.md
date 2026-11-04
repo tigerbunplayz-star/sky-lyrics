@@ -32,7 +32,7 @@ Rebind them in Options → Controls → Key Binds → Sky Lyrics.
 
 ## Your own lyrics
 
-Put `.lrc` (timed) or `.txt` (plain) files in `.minecraft/config/skylyrics/lyrics/`, named `Artist - Title.lrc`. They always win over downloaded lyrics. The menu's **My lyrics** tab shows the exact file name for the song that's playing, opens the folder, and has a **timing recorder**: start it, tap `;` at the start of every line while the song plays, and a timed `.lrc` is saved for you. A `README.txt` in the folder explains the format.
+Put `.lrc` (timed) or `.txt` (plain) files in `.minecraft/config/skylyrics/lyrics/`, named `Artist - Title.lrc`. They always win over downloaded lyrics. The menu's **My lyrics** tab shows the exact file name for the song that's playing, opens the folder, and has a **timing recorder**: start it, tap `;` at the start of every line while the song plays, and a timed `.lrc` is saved for you. A `README.txt` in the folder explains the format. `.lrc` (LRC, short for lyrics) files are plain text: open them with Notepad (right-click → Open with → Notepad), or use the menu's **Edit** button, which opens the current song's file directly. When saving a new one from Notepad, pick "All files" as the type so it doesn't end in `.txt` by mistake.
 
 If a song's lyrics aren't found (or the wrong version is picked), copy a YouTube / YouTube Music link of that song, open the menu while it plays and click **My lyrics → Paste link**. The mod remembers the link and uses that video's lyrics every time the song plays (`links.json` in the same folder; only the link is stored).
 
