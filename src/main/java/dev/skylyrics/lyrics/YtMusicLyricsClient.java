@@ -91,7 +91,28 @@ public final class YtMusicLyricsClient {
 	}
 
 	private LyricsResult lyricsForVideo(String videoId, long durationMs) throws IOException, InterruptedException {
-		String browseId = lyricsBrowseId(videoId);
+		JsonObject next = next(videoId);
+		String browseId = lyricsBrowseId(next);
+
+		if (browseId == null) {
+			// Music videos often have no lyrics tab, but their audio-only "song" version does.
+			for (String other : counterparts(next, videoId)) {
+				browseId = lyricsBrowseId(other);
+				if (browseId != null) break;
+			}
+		}
+
+		if (browseId == null) {
+			// Last try: search with the video's own title and artist.
+			String[] info = videoInfo(next, videoId);
+
+			if (info != null) {
+				NowPlaying np = new NowPlaying(info[0], info[1], "", 0, durationMs, true, 0);
+				Hit hit = findSong(np);
+				if (hit != null && !hit.videoId().equals(videoId)) browseId = lyricsBrowseId(hit.videoId());
+			}
+		}
+
 		if (browseId == null) return LyricsResult.of(LyricsResult.Kind.NOT_FOUND);
 
 		Lyrics timed = timedLyrics(browseId);
@@ -159,12 +180,18 @@ public final class YtMusicLyricsClient {
 
 	/** The song's "Lyrics" tab id, or null if YouTube Music has no lyrics for it. */
 	String lyricsBrowseId(String videoId) throws IOException, InterruptedException {
+		return lyricsBrowseId(next(videoId));
+	}
+
+	private JsonObject next(String videoId) throws IOException, InterruptedException {
 		JsonObject body = new JsonObject();
 		body.addProperty("videoId", videoId);
 		body.addProperty("isAudioOnly", true);
 		body.addProperty("enablePersistentPlaylistPanel", true);
+		return post("next", body, webClient());
+	}
 
-		JsonObject res = post("next", body, webClient());
+	static String lyricsBrowseId(JsonObject res) {
 		JsonArray tabs = arr(nav(res, "contents", "singleColumnMusicWatchNextResultsRenderer", "tabbedRenderer",
 				"watchNextTabbedResultsRenderer", "tabs"));
 		if (tabs == null) return null;
@@ -176,6 +203,63 @@ public final class YtMusicLyricsClient {
 			if (be == null) continue;
 			String pageType = str(nav(be, "browseEndpointContextSupportedConfigs", "browseEndpointContextMusicConfig", "pageType"));
 			if ("MUSIC_PAGE_TYPE_TRACK_LYRICS".equals(pageType)) return str(be.get("browseId"));
+		}
+
+		return null;
+	}
+
+	/** Video ids of the other version (song ⇄ music video) mentioned in a "next" response. */
+	static List<String> counterparts(JsonElement el, String self) {
+		List<String> out = new ArrayList<>();
+		collectCounterparts(el, self, out);
+		return out;
+	}
+
+	private static void collectCounterparts(JsonElement el, String self, List<String> out) {
+		if (el == null || el.isJsonNull()) return;
+
+		if (el.isJsonArray()) {
+			for (JsonElement e : el.getAsJsonArray()) collectCounterparts(e, self, out);
+			return;
+		}
+
+		if (!el.isJsonObject()) return;
+		JsonObject o = el.getAsJsonObject();
+
+		if (o.has("counterpartRenderer")) {
+			String id = str(nav(o, "counterpartRenderer", "playlistPanelVideoRenderer", "videoId"));
+			if (id != null && !id.equals(self) && !out.contains(id)) out.add(id);
+		}
+
+		for (String k : o.keySet()) collectCounterparts(o.get(k), self, out);
+	}
+
+	/** {title, artist} of the video itself from a "next" response, or null. */
+	static String[] videoInfo(JsonElement el, String videoId) {
+		if (el == null || el.isJsonNull()) return null;
+
+		if (el.isJsonArray()) {
+			for (JsonElement e : el.getAsJsonArray()) {
+				String[] r = videoInfo(e, videoId);
+				if (r != null) return r;
+			}
+			return null;
+		}
+
+		if (!el.isJsonObject()) return null;
+		JsonObject o = el.getAsJsonObject();
+		JsonObject v = obj(o.get("playlistPanelVideoRenderer"));
+
+		if (v != null && videoId.equals(str(v.get("videoId")))) {
+			String title = runsText(nav(v, "title", "runs"));
+			JsonArray by = arr(nav(v, "longBylineText", "runs"));
+			String artist = by == null || by.isEmpty() ? "" : str(nav(by.get(0), "text"));
+			if (title != null && !title.isBlank()) return new String[] {title, artist == null ? "" : artist};
+		}
+
+		for (String k : o.keySet()) {
+			String[] r = videoInfo(o.get(k), videoId);
+			if (r != null) return r;
 		}
 
 		return null;
