@@ -31,7 +31,7 @@ function Await($op, [Type]$type) {
     return $task.Result
 }
 
-$null = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType = WindowsRuntime]
+$null = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager,Windows.Media.Control,ContentType=WindowsRuntime]
 $mgrType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]
 $propsType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties]
 $mgr = Await ($mgrType::RequestAsync()) $mgrType

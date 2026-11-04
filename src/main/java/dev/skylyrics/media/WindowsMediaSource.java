@@ -99,7 +99,7 @@ public final class WindowsMediaSource implements AutoCloseable {
 
 	private void runHelper(Path script) throws IOException, InterruptedException {
 		ProcessBuilder pb = new ProcessBuilder(List.of(
-				"powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive",
+				powershellPath(), "-NoLogo", "-NoProfile", "-NonInteractive",
 				"-ExecutionPolicy", "Bypass", "-File", script.toString(),
 				"-Filter", filter, "-ParentPid", Long.toString(ProcessHandle.current().pid())));
 		pb.redirectInput(ProcessBuilder.Redirect.PIPE);
@@ -161,6 +161,17 @@ public final class WindowsMediaSource implements AutoCloseable {
 
 		latest = new NowPlaying(str(o, "title"), str(o, "artist"), str(o, "album"),
 				timelineKnown ? pos : -1, Math.max(0, dur), playing, receivedNanos);
+	}
+
+	private static String powershellPath() {
+		String root = System.getenv("SystemRoot");
+
+		if (root != null) {
+			Path p = Path.of(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+			if (Files.isRegularFile(p)) return p.toString();
+		}
+
+		return "powershell.exe";
 	}
 
 	private Path extractScript() throws IOException {

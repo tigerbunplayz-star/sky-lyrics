@@ -54,6 +54,8 @@ jobs:
               for c in $(unzip -l "$jar" | grep -oE 'net/minecraft/client/renderer/[A-Za-z/$]*TextSubmit\.class' | sed 's#/#.#g; s#.class$##'); do
                 echo "== $c" >> probe.txt; javap -p -cp "$jar" "$c" >> probe.txt 2>&1 || true
               done
+              echo "== TextFeatureRenderer.Submit" >> probe.txt
+              javap -p -cp "$jar" 'net.minecraft.client.renderer.feature.TextFeatureRenderer$Submit' >> probe.txt 2>&1 || true
               echo "== Camera.setRotation" >> probe.txt
               javap -c -p -cp "$jar" net.minecraft.client.Camera 2>&1 | sed -n '/void setRotation(/,/^$/p' | head -50 >> probe.txt || true
               for c in $(unzip -l "$jar" | grep -oE 'net/minecraft/client/renderer/[A-Za-z/]*NameTag[A-Za-z]*Renderer\.class' | sed 's#/#.#g; s#.class$##'); do
@@ -84,3 +86,37 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: build/libs/*.jar
+
+  media-reader:
+    runs-on: windows-latest
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v6
+      - name: run the media reader for a few seconds
+        shell: pwsh
+        run: |
+          $p = Start-Process powershell.exe -PassThru -NoNewWindow `
+            -ArgumentList '-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','src/main/resources/skylyrics/media.ps1','-Filter','spotify','-ParentPid',"$PID" `
+            -RedirectStandardOutput out.txt -RedirectStandardError err.txt
+          Start-Sleep -Seconds 10
+          $alive = -not $p.HasExited
+          if ($alive) { Stop-Process -Id $p.Id -Force }
+          @("alive_after_10s=$alive", '--- stdout', (Get-Content out.txt -TotalCount 15), '--- stderr', (Get-Content err.txt)) | Set-Content media-reader.log
+          Get-Content media-reader.log
+      - name: validate output
+        shell: pwsh
+        run: |
+          $lines = @(Get-Content out.txt | Where-Object { $_ -match '^\{' })
+          if ($lines.Count -lt 5) { throw "media reader printed only $($lines.Count) JSON lines" }
+          foreach ($l in $lines) { $o = $l | ConvertFrom-Json; if ($null -eq $o.ok) { throw "bad line: $l" } }
+          "ok: $($lines.Count) valid lines"
+      - name: publish log
+        if: always()
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/ci && cp media-reader.log /tmp/ci/ 2>/dev/null || echo "no log" > /tmp/ci/media-reader.log
+          cd /tmp/ci && git init -q -b ci-logs-windows && git add -A
+          git -c user.name=ci -c user.email=ci@localhost commit -qm "media reader log for ${GITHUB_SHA}"
+          git push -f -q "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ci-logs-windows
