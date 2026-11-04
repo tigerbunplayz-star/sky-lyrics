@@ -1,10 +1,9 @@
-# Builds the mod on every push. Download the jar from the run's "Artifacts",
-# or from the Releases page when a version tag (v*) is pushed.
+# Builds and tests the mod on every push. Download the jar from the run's "Artifacts".
+# A commit whose message contains [release] also publishes it on the Releases page.
 name: build
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -27,7 +26,23 @@ jobs:
       - name: make gradle wrapper executable
         run: chmod +x ./gradlew
       - name: build
-        run: ./gradlew build --stacktrace
+        run: |
+          set -o pipefail
+          ./gradlew build --stacktrace 2>&1 | tee build.log
+      - name: report build errors
+        if: failure()
+        run: |
+          msg=$(grep -E '\.java:[0-9]+: error:|^\s+(symbol|location|required|found|reason):|FAILED|Exception' build.log | head -40)
+          [ -n "$msg" ] || msg=$(tail -40 build.log)
+          echo "::error title=build failed::$(printf '%s' "$msg" | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+      - name: probe font api
+        if: always()
+        run: |
+          jar=$(find ~/.gradle/caches/fabric-loom -name 'minecraft-merged*.jar' | head -1)
+          out=$( { javap -public -cp "$jar" net.minecraft.network.chat.Style | grep -i font
+                   unzip -l "$jar" | grep -oE 'net/minecraft/[A-Za-z/$]*FontDescription[A-Za-z$]*\.class'
+                   javap -public -cp "$jar" 'net.minecraft.network.chat.FontDescription$Resource'; } 2>&1 | head -30)
+          echo "::notice title=font api::$(printf '%s' "$out" | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
       - name: capture build artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -37,7 +52,7 @@ jobs:
         id: ver
         run: echo "version=$(grep '^mod_version=' gradle.properties | cut -d= -f2)" >> "$GITHUB_OUTPUT"
       - name: publish release
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.version }}
@@ -45,9 +60,9 @@ jobs:
           name: Sky Lyrics ${{ steps.ver.outputs.version }} (Minecraft 26.2, Fabric)
           files: build/libs/*.jar
           body: |
-            Shows the lyrics of the song playing in Spotify, synced, floating in the Minecraft sky.
+            Shows the lyrics of the song playing in Spotify as big, colourful 3D words popping up around you in the world, synced to the music. Works with Hungarian (and other accented) songs.
 
-            **Install:** put the jar below and [Fabric API](https://modrinth.com/mod/fabric-api) (26.2) into `.minecraft/mods`, launch the Fabric 26.2 profile, play something in the Spotify desktop app and look up.
+            **Install:** put the jar below and [Fabric API](https://modrinth.com/mod/fabric-api) (26.2) into `.minecraft/mods`, launch the Fabric 26.2 profile and play something in the Spotify desktop app.
 
             **Keys:** `K` show/hide · `[` lyrics earlier · `]` lyrics later. Settings: `.minecraft/config/skylyrics.json`.
 
@@ -56,6 +71,16 @@ jobs:
     steps:
       - name: checkout repository
         uses: actions/checkout@v6
+      - name: accented text survives the reader
+        shell: pwsh
+        run: |
+          $line = (& powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File src/main/resources/skylyrics/media.ps1 -SelfTest) -join ''
+          "raw: $line"
+          if ($line -match '[^\x00-\x7F]') { throw 'output is not pure ASCII' }
+          $o = $line | ConvertFrom-Json
+          $expected = (-join ([char[]](0xC1, 0x72, 0x76, 0xED, 0x7A, 0x74, 0x171, 0x72, 0x151, 0x20, 0x150, 0x170, 0x20))) + [char]::ConvertFromUtf32(0x1F3B5)
+          if ($o.title -ne $expected) { throw "decoded title mismatch: '$($o.title)'" }
+          'hungarian text ok'
       - name: run the media reader and check its output
         shell: pwsh
         run: |
@@ -76,3 +101,9 @@ jobs:
           if ($lines.Count -lt 5) { throw "media reader printed only $($lines.Count) JSON lines in 40s" }
           foreach ($l in $lines) { $o = $l | ConvertFrom-Json; if ($null -eq $o.ok) { throw "bad line: $l" } }
           "ok: $($lines.Count) valid lines"
+      - name: report failure
+        if: failure()
+        shell: pwsh
+        run: |
+          $t = (@('--- stdout') + @(Get-Content out.txt -TotalCount 15 -ErrorAction SilentlyContinue) + @('--- stderr') + @(Get-Content err.txt -TotalCount 25 -ErrorAction SilentlyContinue)) -join '%0A'
+          Write-Output "::error title=media reader::$t"

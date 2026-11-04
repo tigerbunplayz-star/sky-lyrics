@@ -28,7 +28,22 @@ public final class TitleCleaner {
 		return parts.length == 0 ? artist.strip() : parts[0].strip();
 	}
 
+	/** "Árvíztűrő" → "Arvizturo". */
+	public static String stripDiacritics(String s) {
+		if (s == null) return "";
+		return java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
+	}
+
+	/** Lowercase, no accents, letters and digits only — for comparing names loosely. */
 	public static String normalize(String s) {
-		return s == null ? "" : s.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]+", "");
+		return s == null ? "" : stripDiacritics(s).toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]+", "");
+	}
+
+	/** Whether two artist strings plausibly name the same artist. */
+	public static boolean artistMatches(String a, String b) {
+		String na = normalize(primaryArtist(a));
+		String nb = normalize(primaryArtist(b));
+		if (na.isEmpty() || nb.isEmpty()) return false;
+		return na.equals(nb) || normalize(b).contains(na) || normalize(a).contains(nb);
 	}
 }

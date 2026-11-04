@@ -3,7 +3,7 @@
 	"id": "skylyrics",
 	"version": "${version}",
 	"name": "Sky Lyrics",
-	"description": "Shows the lyrics of the song playing in Spotify, synced, floating in the Minecraft sky.",
+	"description": "Shows the lyrics of the song playing in Spotify as big, colourful 3D words popping up around you, synced to the music.",
 	"authors": [
 		"tigerbunplayz"
 	],

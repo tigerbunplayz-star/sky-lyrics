@@ -8,8 +8,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.StringJoiner;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -68,6 +71,9 @@ public final class LrcLibClient {
 		String cleanTitle = TitleCleaner.cleanTitle(title);
 		String mainArtist = TitleCleaner.primaryArtist(artist);
 
+		String plainTitle = TitleCleaner.stripDiacritics(cleanTitle);
+		String plainArtist = TitleCleaner.stripDiacritics(mainArtist);
+
 		try {
 			Candidate best = null;
 
@@ -76,15 +82,25 @@ public final class LrcLibClient {
 				if (best != null && best.kind == LyricsResult.Kind.SYNCED) return best.toResult();
 			}
 
-			best = better(best, search(params("track_name", title, "artist_name", artist), durationS), durationS);
-			if (isGoodSynced(best, durationS)) return best.toResult();
+			// From most to least precise. Lyrics databases often spell non-English songs
+			// without accents, so accent-free variants are tried too.
+			List<Map<String, String>> searches = List.of(
+					params("track_name", title, "artist_name", artist),
+					params("track_name", cleanTitle, "artist_name", mainArtist),
+					params("track_name", plainTitle, "artist_name", plainArtist),
+					params("track_name", cleanTitle),
+					params("q", cleanTitle + " " + mainArtist),
+					params("q", plainTitle + " " + plainArtist),
+					params("track_name", plainTitle));
+			Set<String> done = new HashSet<>();
 
-			if (!cleanTitle.equalsIgnoreCase(title) || !mainArtist.equalsIgnoreCase(artist)) {
-				best = better(best, search(params("track_name", cleanTitle, "artist_name", mainArtist), durationS), durationS);
+			for (Map<String, String> query : searches) {
+				if (!done.add(query.toString())) continue;
+				// Loose searches (no artist given) must match the artist themselves.
+				boolean needArtist = !query.containsKey("artist_name");
+				best = better(best, search(query, artist, needArtist, durationS), durationS);
 				if (isGoodSynced(best, durationS)) return best.toResult();
 			}
-
-			best = better(best, search(params("q", cleanTitle + " " + mainArtist), durationS), durationS);
 
 			if (best == null) return LyricsResult.of(LyricsResult.Kind.NOT_FOUND);
 			return best.toResult();
@@ -107,7 +123,7 @@ public final class LrcLibClient {
 		return Candidate.from(body.getAsJsonObject());
 	}
 
-	private Candidate search(Map<String, String> p, double durationS) throws IOException, InterruptedException {
+	private Candidate search(Map<String, String> p, String artist, boolean needArtist, double durationS) throws IOException, InterruptedException {
 		JsonElement body = get("/search", p);
 		if (body == null || !body.isJsonArray()) return null;
 
@@ -116,7 +132,12 @@ public final class LrcLibClient {
 
 		for (JsonElement el : arr) {
 			if (!el.isJsonObject()) continue;
-			best = better(best, Candidate.from(el.getAsJsonObject()), durationS);
+			Candidate c = Candidate.from(el.getAsJsonObject());
+			if (c == null) continue;
+			if (needArtist && !TitleCleaner.artistMatches(artist, c.artistName)) continue;
+			// Ignore results that are clearly a different recording.
+			if (durationS > 0 && c.durationS > 0 && Math.abs(c.durationS - durationS) > 20) continue;
+			best = better(best, c, durationS);
 		}
 
 		return best;
@@ -176,6 +197,7 @@ public final class LrcLibClient {
 		final LyricsResult.Kind kind;
 		final Lyrics lyrics;
 		final double durationS;
+		String artistName = "";
 
 		Candidate(LyricsResult.Kind kind, Lyrics lyrics, double durationS) {
 			this.kind = kind;
@@ -184,6 +206,15 @@ public final class LrcLibClient {
 		}
 
 		static Candidate from(JsonObject o) {
+			Candidate c = parse(o);
+			if (c != null) {
+				String a = str(o, "artistName");
+				c.artistName = a == null ? "" : a;
+			}
+			return c;
+		}
+
+		private static Candidate parse(JsonObject o) {
 			double duration = num(o, "duration");
 			String synced = str(o, "syncedLyrics");
 

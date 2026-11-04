@@ -1,0 +1,6 @@
+{
+	"providers": [
+		{ "type": "ttf", "file": "skylyrics:block.ttf", "size": 11.0, "oversample": 10.0, "shift": [0.0, 1.0] },
+		{ "type": "reference", "id": "minecraft:default" }
+	]
+}

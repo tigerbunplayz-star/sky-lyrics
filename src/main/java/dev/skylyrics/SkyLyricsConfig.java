@@ -6,11 +6,15 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import dev.skylyrics.render.LyricScene;
 
 /** Settings, stored in .minecraft/config/skylyrics.json. Edit the file and restart to change them. */
 public final class SkyLyricsConfig {
@@ -19,36 +23,37 @@ public final class SkyLyricsConfig {
 
 	/** Show lyrics at all (toggle in game with K). */
 	public boolean enabled = true;
-	/** How far away the text floats, in blocks. Lower it if you play with a tiny render distance. */
-	public double distance = 48;
+	/** "block" (chunky 3D letters), "lobster" (fancy script) or "minecraft" (the game's font). */
+	public String font = "block";
+	/** Write the lyrics in CAPITALS. */
+	public boolean uppercase = true;
 	/** Text size multiplier. */
 	public double size = 1.0;
-	/** Degrees above the horizon. */
-	public double elevation = 28;
-	/** true: the lyrics swing around to stay in front of you. false: they stay put at fixedYaw. */
-	public boolean followView = true;
-	/** How quickly the lyrics catch up when you turn (higher = snappier). */
-	public double followSpeed = 1.6;
-	/** Compass direction for followView=false: 0 south, 90 west, 180 north, 270 east. */
-	public double fixedYaw = 180;
-	/** Show the upcoming line, faded, under the current one. */
-	public boolean showNextLine = true;
-	/** Light up each line from left to right as it's sung. */
-	public boolean karaoke = true;
-	public String lyricColor = "#FFFFFF";
-	public String unsungColor = "#9FB0C8";
-	public String titleColor = "#1ED760";
-	public String dimColor = "#DDE6F0";
-	public double opacity = 1.0;
-	public boolean shadow = true;
-	/** Dark box behind the text for readability on bright skies. */
-	public boolean background = false;
-	/** Shift lyric timing (ms). Positive shows lines earlier. Adjust in game with [ and ]. */
+	/** 3D thickness of the letters (0 = flat). */
+	public double depth = 1.0;
+	/** Colours the word groups cycle through. */
+	public List<String> colors = new ArrayList<>(List.of("#FF5C8A", "#FFB443", "#FFE45C", "#5CFF9D", "#4DD8FF", "#9B7BFF"));
+	/** Gently shift the colours over time. */
+	public boolean shimmer = true;
+	/** Let the words bob and sway a little. */
+	public boolean bob = true;
+	/** How far left/right of where you look the words can appear (degrees). */
+	public double spread = 38;
+	/** How far away the words appear (blocks). */
+	public double distanceMin = 13;
+	public double distanceMax = 22;
+	/** Height above your eyes (blocks). Raise both to put the lyrics up in the sky. */
+	public double heightMin = -0.5;
+	public double heightMax = 4.5;
+	/** How long a line stays after the next one starts (ms). */
+	public long holdMs = 2200;
+	/** Lines are cut into groups of at most this many words / letters. */
+	public int maxWordsPerGroup = 3;
+	public int maxCharsPerGroup = 12;
+	/** Shift lyric timing (ms). Positive shows words earlier. Adjust in game with [ and ]. */
 	public long offsetMs = 0;
 	/** Which app to read: "spotify", or "*" for whatever is playing (browsers, other players). */
 	public String player = "spotify";
-	/** Longest line width (in Minecraft font pixels) before wrapping. */
-	public int maxLineWidth = 150;
 
 	private transient Path path;
 
@@ -64,6 +69,7 @@ public final class SkyLyricsConfig {
 		}
 
 		if (cfg == null) cfg = new SkyLyricsConfig();
+		if (cfg.colors == null || cfg.colors.isEmpty()) cfg.colors = new SkyLyricsConfig().colors;
 		cfg.path = path;
 		cfg.save(); // writes any new settings with their defaults
 		return cfg;
@@ -81,6 +87,15 @@ public final class SkyLyricsConfig {
 		} catch (IOException e) {
 			LOG.warn("[Sky Lyrics] Couldn't save {}: {}", path, e.toString());
 		}
+	}
+
+	public LyricScene.Settings sceneSettings() {
+		float dMin = (float) Math.max(4, Math.min(distanceMin, distanceMax));
+		float dMax = (float) Math.max(dMin, Math.max(distanceMin, distanceMax));
+		float hMin = (float) Math.min(heightMin, heightMax);
+		float hMax = (float) Math.max(heightMin, heightMax);
+		return new LyricScene.Settings(Math.max(4, maxCharsPerGroup), Math.max(1, maxWordsPerGroup),
+				(float) Math.max(0, Math.min(80, spread)), dMin, dMax, hMin, hMax, Math.max(0, holdMs), uppercase);
 	}
 
 	public static int parseColor(String hex, int fallback) {

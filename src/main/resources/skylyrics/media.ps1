@@ -2,9 +2,14 @@
 # Reads what's playing from Windows' media controls (the same info shown in the
 # volume flyout) and prints one JSON line about every 400 ms. Started by the mod;
 # exits on its own when Minecraft closes.
+#
+# Keep this file pure ASCII: Windows PowerShell reads BOM-less scripts in the
+# system code page. Non-ASCII text (accents like o-double-acute) is written as
+# \uXXXX JSON escapes so it survives any console encoding.
 param(
     [string]$Filter = 'spotify',
-    [int]$ParentPid = 0
+    [int]$ParentPid = 0,
+    [switch]$SelfTest
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,6 +22,23 @@ function Emit([string]$line) {
     } catch {
         exit 0
     }
+}
+
+function ToJsonLine($obj) {
+    $json = $obj | ConvertTo-Json -Compress
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($ch in $json.ToCharArray()) {
+        $code = [int]$ch
+        if ($code -lt 128) { [void]$sb.Append($ch) } else { [void]$sb.Append(('\u{0:x4}' -f $code)) }
+    }
+    return $sb.ToString()
+}
+
+if ($SelfTest) {
+    # "Arvizturo tukorfurogep" with real Hungarian accents, plus an emoji (surrogate pair).
+    $sample = -join ([char[]](0xC1, 0x72, 0x76, 0xED, 0x7A, 0x74, 0x171, 0x72, 0x151, 0x20, 0x150, 0x170, 0x20)) + [char]::ConvertFromUtf32(0x1F3B5)
+    Emit (ToJsonLine ([ordered]@{ ok = $true; title = $sample; artist = 'Test'; album = ''; pos = 0; dur = 1000; status = 'Playing'; updated = 0; now = 0 }))
+    exit 0
 }
 
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
@@ -72,7 +94,7 @@ while ($true) {
                 updated = [long]$tl.LastUpdatedTime.ToUnixTimeMilliseconds()
                 now     = [long][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
             }
-            $line = ($o | ConvertTo-Json -Compress)
+            $line = ToJsonLine $o
         }
     } catch {
         $msg = ($_.Exception.Message -replace '[\r\n"\\]', ' ')

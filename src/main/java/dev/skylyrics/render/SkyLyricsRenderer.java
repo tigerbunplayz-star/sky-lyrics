@@ -1,41 +1,60 @@
 package dev.skylyrics.render;
 
-import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import org.joml.Quaternionf;
-import org.joml.Vector3f;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.FontDescription;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.LightCoordsUtil;
+import net.minecraft.world.phys.Vec3;
 
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 
 import dev.skylyrics.LyricsEngine;
 import dev.skylyrics.SkyLyricsConfig;
-import dev.skylyrics.render.SkyLayout.Row;
-import dev.skylyrics.render.SkyLayout.Style;
+import dev.skylyrics.render.LyricScene.Chunk;
+import dev.skylyrics.render.LyricScene.Kind;
+import dev.skylyrics.render.LyricScene.Placement;
 
-/** Draws the lyric rows as huge glowing text floating in the sky in front of the player. */
+/**
+ * Draws the lyric word groups as chunky, colourful 3D letters standing in the world around
+ * the player. Each group is anchored where the player was looking when it appeared, so you
+ * can walk around them and see their sides.
+ */
 public final class SkyLyricsRenderer {
-	/** Vertical distance between rows, in font pixels. */
-	private static final float LINE_PX = 12f;
-	/** Blocks of text height per block of distance, per font pixel (keeps the angular size constant). */
-	private static final float SIZE_PER_DISTANCE = 0.0095f;
+	/** Blocks per font pixel for a group 18 blocks away (keeps size similar at any distance). */
+	private static final float BASE_SCALE = 0.2f;
+	private static final float REFERENCE_DISTANCE = 18f;
+	/** Slices stacked behind the front face to make the letters look solid. */
+	private static final int DEPTH_LAYERS = 12;
+	/** Letter thickness in font pixels at depth = 1. */
+	private static final float DEPTH_PX = 2.4f;
+	private static final double APPEAR_MS = 520;
 	private static final long NOTICE_NANOS = 1_800_000_000L;
+
+	private static final FontDescription BLOCK_FONT = new FontDescription.Resource(Identifier.fromNamespaceAndPath("skylyrics", "block"));
+	private static final FontDescription LOBSTER_FONT = new FontDescription.Resource(Identifier.fromNamespaceAndPath("skylyrics", "lobster"));
+
+	private record Anchor(double x, double y, double z, float yaw) {
+	}
 
 	private final Supplier<SkyLyricsConfig> config;
 	private final LyricsEngine engine;
-
-	private float smoothedYaw = Float.NaN;
-	private long lastFrameNanos;
+	private final Map<Long, Anchor> anchors = new HashMap<>();
+	private String anchorTrack = "";
 	private volatile String notice;
 	private volatile long noticeUntilNanos;
 
@@ -44,7 +63,7 @@ public final class SkyLyricsRenderer {
 		this.engine = engine;
 	}
 
-	/** Briefly show a small message in the sky (toggle / timing changes). */
+	/** Briefly show a small message in front of the player (toggle / timing changes). */
 	public void showNotice(String text) {
 		notice = text;
 		noticeUntilNanos = System.nanoTime() + NOTICE_NANOS;
@@ -56,143 +75,184 @@ public final class SkyLyricsRenderer {
 
 		SkyLyricsConfig cfg = config.get();
 		long now = System.nanoTime();
-		updateYaw(cfg.followView ? mc.player.getYRot() : (float) cfg.fixedYaw, (float) cfg.followSpeed, now);
+		double timeS = (now % 3_600_000_000_000L) / 1_000_000_000.0;
+		Vec3 cam = context.levelState().cameraRenderState.pos;
+		float viewYaw = mc.player.getYRot();
 
-		List<Row> rows = new ArrayList<>();
+		LyricsEngine.Snapshot snap = engine.snapshot(now, cfg.offsetMs);
+		String track = snap.title() + "\u0001" + snap.artist();
 
-		if (cfg.enabled) {
-			rows.addAll(SkyLayout.compute(engine.snapshot(now, cfg.offsetMs), cfg.showNextLine, cfg.karaoke));
+		if (!track.equals(anchorTrack)) {
+			anchors.clear();
+			anchorTrack = track;
+		}
+
+		List<Chunk> chunks = cfg.enabled ? LyricScene.compute(snap, cfg.sceneSettings()) : List.of();
+		Set<Long> live = new HashSet<>();
+		for (Chunk c : chunks) live.add(c.key());
+		anchors.keySet().retainAll(live);
+
+		PoseStack poseStack = context.poseStack();
+		SubmitNodeCollector out = context.submitNodeCollector();
+		Font font = mc.font;
+		int[] palette = palette(cfg);
+
+		for (Chunk c : chunks) {
+			Anchor a = anchors.computeIfAbsent(c.key(), k -> new Anchor(cam.x, cam.y, cam.z, viewYaw));
+			// Left far behind (teleport, fast travel): don't draw it across the map.
+			double dx = a.x() - cam.x, dy = a.y() - cam.y, dz = a.z() - cam.z;
+			if (dx * dx + dy * dy + dz * dz > 80 * 80) continue;
+			drawChunk(poseStack, out, font, cfg, palette, c, a, cam, timeS);
 		}
 
 		String n = notice;
 		long left = noticeUntilNanos - now;
-
-		if (n != null && left > 0) {
-			float a = (float) Math.min(1.0, left / 300_000_000.0);
-			rows.add(new Row(n, Style.DIM, a, 0.45f, -2.4f, -1));
-		}
-
-		if (rows.isEmpty()) return;
-
-		draw(context, mc.font, cfg, rows);
+		if (n != null && left > 0) drawNotice(poseStack, out, font, n, cam, viewYaw, left);
 	}
 
-	private void updateYaw(float targetYaw, float speed, long now) {
-		float dt = (now - lastFrameNanos) / 1_000_000_000f;
-		lastFrameNanos = now;
+	private void drawChunk(PoseStack poseStack, SubmitNodeCollector out, Font font, SkyLyricsConfig cfg,
+			int[] palette, Chunk c, Anchor a, Vec3 cam, double timeS) {
+		Placement p = c.place();
 
-		if (Float.isNaN(smoothedYaw) || dt > 1f || dt < 0f || speed <= 0f) {
-			smoothedYaw = targetYaw;
-			return;
-		}
+		// Pop up from below with a little overshoot and swing into place; shrink and sink away.
+		float in = (float) clamp01(c.appearMs() / APPEAR_MS);
+		if (c.appearMs() < 0) return;
+		float pop = easeOutBack(in);
+		float settle = 1f - easeOutCubic(in);
+		float exit = c.exit();
+		float shrink = 1f - easeInCubic(exit);
+		float scaleAnim = Math.max(0f, pop * shrink);
+		if (scaleAnim < 0.02f) return;
 
-		float delta = wrapDegrees(targetYaw - smoothedYaw);
-		float k = 1f - (float) Math.exp(-speed * dt);
-		smoothedYaw = wrapDegrees(smoothedYaw + delta * k);
-	}
+		float bob = cfg.bob ? (float) Math.sin(timeS * 1.7 + p.phase()) * 0.12f : 0f;
+		float sway = cfg.bob ? (float) Math.sin(timeS * 0.9 + p.phase() * 1.3) * 2.5f : 0f;
+		float lift = -settle * 1.6f - exit * 1.4f + bob;
 
-	private void draw(LevelRenderContext context, Font font, SkyLyricsConfig cfg, List<Row> rows) {
-		PoseStack poseStack = context.poseStack();
-		SubmitNodeCollector out = context.submitNodeCollector();
+		double yawRad = Math.toRadians(a.yaw() + p.yawOffset());
+		double wx = a.x() - Math.sin(yawRad) * p.distance();
+		double wy = a.y() + p.height() + lift;
+		double wz = a.z() + Math.cos(yawRad) * p.distance();
 
-		float distance = (float) Math.max(8, cfg.distance);
-		float elevation = (float) Math.toRadians(Math.max(-80, Math.min(85, cfg.elevation)));
-		Quaternionf facing = new Quaternionf().rotationYXZ((float) Math.PI - (float) Math.toRadians(smoothedYaw), elevation, 0f);
-		Vector3f forward = facing.transform(new Vector3f(0f, 0f, -1f));
-		float s = distance * SIZE_PER_DISTANCE * (float) Math.max(0.1, cfg.size);
-
-		int lyricRgb = SkyLyricsConfig.parseColor(cfg.lyricColor, 0xFFFFFF);
-		int unsungRgb = SkyLyricsConfig.parseColor(cfg.unsungColor, 0x9FB0C8);
-		int titleRgb = SkyLyricsConfig.parseColor(cfg.titleColor, 0x1ED760);
-		int dimRgb = SkyLyricsConfig.parseColor(cfg.dimColor, 0xDDE6F0);
-
-		// Wrap everything first so rows can make room for multi-line neighbours.
-		List<List<String>> wrapped = new ArrayList<>(rows.size());
-		float mainExtra = 0f;
-
-		for (Row row : rows) {
-			int maxWidth = Math.max(40, Math.round(cfg.maxLineWidth / row.scale()));
-			List<String> lines = TextWrap.wrap(row.text(), maxWidth, font::width);
-			wrapped.add(lines);
-
-			if (row.style() == Style.LYRIC || row.style() == Style.TITLE) {
-				mainExtra = Math.max(mainExtra, (lines.size() - 1) * LINE_PX * row.scale());
-			}
-		}
+		float faceYaw = a.yaw() + p.faceTurn() + settle * 40f + sway;
+		float s = BASE_SCALE * p.size() * (float) Math.max(0.1, cfg.size) * (p.distance() / REFERENCE_DISTANCE) * scaleAnim;
 
 		poseStack.pushPose();
-		poseStack.translate(forward.x() * distance, forward.y() * distance, forward.z() * distance);
-		poseStack.mulPose(facing);
+		poseStack.translate(wx - cam.x, wy - cam.y, wz - cam.z);
+		poseStack.mulPose(new Quaternionf().rotationYXZ((float) Math.PI - (float) Math.toRadians(faceYaw), 0f, 0f));
+		poseStack.mulPose(new Quaternionf().rotationZ((float) Math.toRadians(p.roll())));
 		poseStack.scale(s, -s, s);
 
-		for (int r = 0; r < rows.size(); r++) {
-			Row row = rows.get(r);
-			List<String> lines = wrapped.get(r);
-			if (lines.isEmpty()) continue;
+		boolean note = c.kind() == Kind.NOTE;
+		FontDescription fontDesc = note ? null : fontFor(cfg);
+		int base = note ? 0xFFFFFF : palette[Math.floorMod(c.color(), palette.length)];
+		float flash = (1f - in) * 0.65f; // freshly appeared words flash brighter
 
-			float alpha = row.alpha() * (float) Math.max(0, Math.min(1, cfg.opacity));
-			if (alpha < 0.02f) continue;
+		FormattedCharSequence front = note ? plain(c.text(), null, 0xEEF2F8).getVisualOrderText()
+				: gradient(c.text(), fontDesc, base, cfg.shimmer ? timeS : 0, p.phase(), flash).getVisualOrderText();
+		float x = -font.width(front) / 2f;
+		float y = -font.lineHeight / 2f;
 
-			boolean main = row.style() == Style.LYRIC || row.style() == Style.TITLE;
-			float ownExtra = (lines.size() - 1) * LINE_PX * row.scale();
-			float baseY = row.y() * LINE_PX;
-			if (!main && row.y() > 0) baseY += mainExtra / 2f + ownExtra / 2f;
-			if (!main && row.y() < 0) baseY -= mainExtra / 2f + ownExtra / 2f;
+		float depthPx = (float) Math.max(0, cfg.depth) * DEPTH_PX;
 
-			int rgb = switch (row.style()) {
-				case LYRIC, SUB -> lyricRgb;
-				case TITLE -> titleRgb;
-				case DIM -> dimRgb;
-			};
-			int argb = (Math.max(5, Math.round(alpha * 255f)) << 24) | rgb;
-			int background = cfg.background ? (Math.round(alpha * 0x70) << 24) : 0;
+		if (!note && depthPx > 0.01f) {
+			FormattedCharSequence side = plain(c.text(), fontDesc, -1).getVisualOrderText(); // colour comes from each layer
 
-			int totalChars = String.join(" ", lines).length();
-			int sungTotal = row.sung() >= 0 ? Math.round(row.sung() * totalChars) : -1;
-			int charStart = 0;
-
-			for (int i = 0; i < lines.size(); i++) {
-				String text = lines.get(i);
-				FormattedCharSequence seq;
-
-				if (sungTotal >= 0) {
-					seq = karaokeLine(text, sungTotal - charStart, lyricRgb, unsungRgb);
-				} else {
-					seq = Component.literal(text).getVisualOrderText();
-				}
-
-				charStart += text.length() + 1;
-
-				float lineY = baseY + (i - (lines.size() - 1) / 2f) * LINE_PX * row.scale();
-
+			for (int k = DEPTH_LAYERS; k >= 1; k--) {
+				float f = (float) k / DEPTH_LAYERS;
+				int shade = Colors.scale(base, 0.62f - 0.34f * f);
 				poseStack.pushPose();
-				poseStack.translate(0f, lineY, 0f);
-				poseStack.scale(row.scale(), row.scale(), row.scale());
-				float x = -font.width(seq) / 2f;
-				float y = -font.lineHeight / 2f;
-				out.submitText(poseStack, x, y, seq, cfg.shadow, Font.DisplayMode.NORMAL,
-						LightCoordsUtil.FULL_BRIGHT, argb, background, 0);
+				poseStack.translate(0f, 0f, -depthPx * f);
+				out.submitText(poseStack, x, y, side, false, Font.DisplayMode.NORMAL,
+						LightCoordsUtil.FULL_BRIGHT, 0xFF000000 | shade, 0, 0);
 				poseStack.popPose();
 			}
 		}
 
+		out.submitText(poseStack, x, y, front, note, Font.DisplayMode.NORMAL,
+				LightCoordsUtil.FULL_BRIGHT, 0xFFFFFFFF, 0, 0);
 		poseStack.popPose();
 	}
 
-	private static FormattedCharSequence karaokeLine(String text, int sungChars, int sungRgb, int unsungRgb) {
-		int k = Math.max(0, Math.min(text.length(), sungChars));
-		if (k > 0 && k < text.length() && Character.isLowSurrogate(text.charAt(k))) k++;
+	private void drawNotice(PoseStack poseStack, SubmitNodeCollector out, Font font, String text,
+			Vec3 cam, float viewYaw, long leftNanos) {
+		float grow = (float) Math.min(1.0, leftNanos / 250_000_000.0);
+		double yawRad = Math.toRadians(viewYaw);
+		float dist = 8f;
 
-		MutableComponent line = Component.empty();
-		if (k > 0) line.append(Component.literal(text.substring(0, k)).withColor(sungRgb));
-		if (k < text.length()) line.append(Component.literal(text.substring(k)).withColor(unsungRgb));
-		return line.getVisualOrderText();
+		poseStack.pushPose();
+		poseStack.translate(-Math.sin(yawRad) * dist, 2.2, Math.cos(yawRad) * dist);
+		poseStack.mulPose(new Quaternionf().rotationYXZ((float) Math.PI - (float) yawRad, 0f, 0f));
+		float s = 0.035f * grow;
+		poseStack.scale(s, -s, s);
+		FormattedCharSequence seq = Component.literal(text).getVisualOrderText();
+		out.submitText(poseStack, -font.width(seq) / 2f, -font.lineHeight / 2f, seq, true,
+				Font.DisplayMode.NORMAL, LightCoordsUtil.FULL_BRIGHT, 0xFFFFFFFF, 0x50000000, 0);
+		poseStack.popPose();
 	}
 
-	private static float wrapDegrees(float deg) {
-		float d = deg % 360f;
-		if (d >= 180f) d -= 360f;
-		if (d < -180f) d += 360f;
-		return d;
+	/** Front face: each letter shifts hue slightly, and the whole group shimmers over time. */
+	private static MutableComponent gradient(String text, FontDescription fontDesc, int base, double timeS, float phase, float flash) {
+		float[] hsv = Colors.toHsv(base);
+		float drift = timeS == 0 ? 0f : (float) Math.sin(timeS * 1.1 + phase) * 0.035f;
+		MutableComponent line = Component.empty();
+		int i = 0;
+
+		for (int off = 0; off < text.length(); ) {
+			int cp = text.codePointAt(off);
+			String ch = new String(Character.toChars(cp));
+			off += Character.charCount(cp);
+
+			int rgb = Colors.fromHsv(hsv[0] + i * 0.022f + drift, hsv[1] * 0.92f, Math.min(1f, hsv[2] * 1.04f + 0.02f));
+			if (flash > 0f) rgb = Colors.mix(rgb, 0xFFFFFF, flash);
+			line.append(plain(ch, fontDesc, rgb));
+			if (!Character.isWhitespace(cp)) i++;
+		}
+
+		return line;
+	}
+
+	/** @param rgb colour, or -1 to use the colour passed when drawing */
+	private static MutableComponent plain(String text, FontDescription fontDesc, int rgb) {
+		MutableComponent c = Component.literal(text);
+		if (rgb >= 0) c = c.withColor(rgb);
+		if (fontDesc != null) c = c.withStyle(style -> style.withFont(fontDesc));
+		return c;
+	}
+
+	private static FontDescription fontFor(SkyLyricsConfig cfg) {
+		String f = cfg.font == null ? "block" : cfg.font.strip().toLowerCase(java.util.Locale.ROOT);
+		return switch (f) {
+			case "minecraft", "default", "vanilla" -> null;
+			case "lobster", "fancy", "script" -> LOBSTER_FONT;
+			default -> BLOCK_FONT;
+		};
+	}
+
+	private static int[] palette(SkyLyricsConfig cfg) {
+		List<String> list = cfg.colors;
+		if (list == null || list.isEmpty()) return new int[] {0xFF5C8A, 0x4DD8FF, 0xFFE45C};
+		int[] p = new int[list.size()];
+		for (int i = 0; i < p.length; i++) p[i] = SkyLyricsConfig.parseColor(list.get(i), 0xFFFFFF);
+		return p;
+	}
+
+	private static double clamp01(double v) {
+		return v < 0 ? 0 : (v > 1 ? 1 : v);
+	}
+
+	private static float easeOutCubic(float t) {
+		float u = 1f - t;
+		return 1f - u * u * u;
+	}
+
+	private static float easeInCubic(float t) {
+		return t * t * t;
+	}
+
+	private static float easeOutBack(float t) {
+		float c1 = 1.9f;
+		float c3 = c1 + 1f;
+		float u = t - 1f;
+		return 1f + c3 * u * u * u + c1 * u * u;
 	}
 }
