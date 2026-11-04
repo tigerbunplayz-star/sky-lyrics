@@ -12,10 +12,15 @@ import dev.skylyrics.SkyLyricsConfig;
 
 /** What the settings menu shows: tabs of toggles, sliders and choices bound to config fields. */
 public final class SettingsModel {
-	public sealed interface Entry permits Toggle, Slider, Choice {
+	public sealed interface Entry permits Toggle, Slider, Choice, Picker, Preview {
 		String label();
 
 		String help();
+
+		/** Row height in GUI pixels. */
+		default int height() {
+			return 24;
+		}
 
 		/** Put this setting back to its value in {@code defaults}. */
 		void reset(SkyLyricsConfig cfg, SkyLyricsConfig defaults);
@@ -68,8 +73,50 @@ public final class SettingsModel {
 		}
 	}
 
-	public record Tab(String name, String icon, String description, List<Entry> entries) {
+	/** One editable colour of a {@link Picker}. */
+	public record Swatch(String name, java.util.function.Function<SkyLyricsConfig, String> get,
+			BiConsumer<SkyLyricsConfig, String> set, Predicate<SkyLyricsConfig> enabled) {
 	}
+
+	/** A colour picker (saturation/brightness square, hue bar, quick colours) for one or more swatches. */
+	public record Picker(String label, String help, List<Swatch> swatches) implements Entry {
+		public int height() {
+			return 100;
+		}
+
+		public void reset(SkyLyricsConfig cfg, SkyLyricsConfig defaults) {
+			for (Swatch s : swatches) s.set().accept(cfg, s.get().apply(defaults));
+		}
+	}
+
+	/** A sample word drawn with the current colours. */
+	public record Preview(String label, String help) implements Entry {
+		public int height() {
+			return 30;
+		}
+
+		public void reset(SkyLyricsConfig cfg, SkyLyricsConfig defaults) {
+		}
+	}
+
+	/**
+	 * A menu page. {@code shownWhen} hides entries that don't apply right now (e.g. the colour
+	 * picker while the Original colours are selected); Reset tab still resets them all.
+	 */
+	public record Tab(String name, String icon, String description, List<Entry> entries,
+			java.util.Map<Entry, Predicate<SkyLyricsConfig>> shownWhen) {
+		public Tab(String name, String icon, String description, List<Entry> entries) {
+			this(name, icon, description, entries, java.util.Map.of());
+		}
+
+		public List<Entry> visible(SkyLyricsConfig cfg) {
+			return entries.stream().filter(e -> shownWhen.getOrDefault(e, c -> true).test(cfg)).toList();
+		}
+	}
+
+	/** Quick colours shown under the picker. */
+	public static final List<Integer> QUICK_COLORS = List.of(0xFF3B3B, 0xFF8A00, 0xFFE14D, 0x46E86A, 0x2EE6D6,
+			0x3D8BFF, 0x9B5CFF, 0xFF4FB8, 0xFFFFFF, 0x1A1A1A);
 
 	/** Colour presets the "Colours" choice cycles through. */
 	public static final List<String> PALETTE_NAMES = List.of("Candy", "Sunset", "Ocean", "Neon", "Pastel", "Snow");
@@ -100,22 +147,19 @@ public final class SettingsModel {
 								List.of("Spotify", "Any player"),
 								c -> indexOf(PLAYERS, c.player == null ? "spotify" : c.player.strip().toLowerCase(Locale.ROOT)),
 								(c, i) -> c.player = PLAYERS.get(i)))),
-				new Tab("Look", "✦", "Font, colours and style of the words", List.of(
+				new Tab("Look", "✦", "Font, size and style of the words", List.of(
 						new Choice("Font", "Chunky block letters, a fancy script, or the Minecraft font",
 								List.of("Block", "Script", "Minecraft"),
 								c -> fontIndex(c.font), (c, i) -> c.font = FONTS.get(i)),
-						new Choice("Colours", "Colour set the word groups cycle through",
-								PALETTE_NAMES, c -> paletteIndex(c.colors), (c, i) -> c.colors = new java.util.ArrayList<>(PALETTES.get(i))),
 						new Slider("Text size", "How big the words are", 0.3, 2.5, 0.05,
 								c -> c.size, (c, v) -> c.size = v, v -> String.format(Locale.ROOT, "%.2fx", v)),
 						new Slider("3D depth", "Thickness of the letters (0 = flat)", 0, 3, 0.1,
 								c -> c.depth, (c, v) -> c.depth = v, v -> v == 0 ? "flat" : String.format(Locale.ROOT, "%.1fx", v)),
 						new Toggle("Capital letters", "Write the lyrics in CAPITALS",
 								c -> c.uppercase, (c, v) -> c.uppercase = v),
-						new Toggle("Colour shimmer", "Colours gently shift over time",
-								c -> c.shimmer, (c, v) -> c.shimmer = v),
 						new Toggle("Float and sway", "Words bob and sway a little",
 								c -> c.bob, (c, v) -> c.bob = v))),
+				colorsTab(),
 				new Tab("Placement", "◎", "Where the words appear around you", List.of(
 						new Slider("Distance", "How far away the words appear", 8, 80, 1,
 								SkyLyricsConfig::distanceCenter, SkyLyricsConfig::setDistanceCenter,
@@ -136,6 +180,31 @@ public final class SettingsModel {
 						new Slider("Timing offset", "Shift all lyrics earlier (+) or later (-); also the [ and ] keys", -3000, 3000, 50,
 								c -> c.offsetMs, (c, v) -> c.offsetMs = Math.round(v),
 								v -> (v > 0 ? "+" : "") + Math.round(v) + " ms"))));
+	}
+
+	private static Tab colorsTab() {
+		Choice style = new Choice("Style", "Original: the colourful palette. Custom: pick your own colours",
+				List.of("Original", "Custom"), c -> c.isCustomColors() ? 1 : 0,
+				(c, i) -> c.colorMode = i == 1 ? "custom" : "original");
+		Choice palette = new Choice("Palette", "Colour set the word groups cycle through",
+				PALETTE_NAMES, c -> paletteIndex(c.colors), (c, i) -> c.colors = new java.util.ArrayList<>(PALETTES.get(i)));
+		Toggle fade = new Toggle("Fade", "Blend the letters of each word into a second colour",
+				c -> c.customFade, (c, v) -> c.customFade = v);
+		Picker picker = new Picker("Colors", "Click a swatch, then pick its colour; the dots are quick picks", List.of(
+				new Swatch("Main", c -> c.customColor, (c, v) -> c.customColor = v, c -> true),
+				new Swatch("Fade to", c -> c.customFadeColor, (c, v) -> c.customFadeColor = v, c -> c.customFade)));
+		Toggle shimmer = new Toggle("Shimmer", "Colours gently shift over time",
+				c -> c.shimmer, (c, v) -> c.shimmer = v);
+		Preview preview = new Preview("Preview", "How the words will look");
+
+		Predicate<SkyLyricsConfig> custom = SkyLyricsConfig::isCustomColors;
+		java.util.Map<Entry, Predicate<SkyLyricsConfig>> when = new java.util.IdentityHashMap<>();
+		when.put(palette, custom.negate());
+		when.put(fade, custom);
+		when.put(picker, custom);
+
+		return new Tab("Colors", "\u25D0", "Text colour: the Original palette or your own", List.of(
+				style, preview, palette, fade, picker, shimmer), when);
 	}
 
 	private static int indexOf(List<String> list, String v) {

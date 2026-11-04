@@ -120,14 +120,14 @@ public final class SkyLyricsRenderer {
 		PoseStack poseStack = context.poseStack();
 		SubmitNodeCollector out = context.submitNodeCollector();
 		Font font = mc.font;
-		int[] palette = palette(cfg);
+		ColorScheme colors = cfg.colorScheme();
 
 		for (Chunk c : chunks) {
 			Anchor a = anchors.computeIfAbsent(c.key(), k -> new Anchor(cam.x, cam.y, cam.z, viewYaw));
 			// Left far behind (teleport, fast travel): don't draw it across the map.
 			double dx = a.x() - cam.x, dy = a.y() - cam.y, dz = a.z() - cam.z;
 			if (dx * dx + dy * dy + dz * dz > 80 * 80) continue;
-			drawChunk(poseStack, out, font, cfg, palette, c, a, cam, timeS);
+			drawChunk(poseStack, out, font, cfg, colors, c, a, cam, timeS);
 		}
 
 		String n = notice;
@@ -136,7 +136,7 @@ public final class SkyLyricsRenderer {
 	}
 
 	private void drawChunk(PoseStack poseStack, SubmitNodeCollector out, Font font, SkyLyricsConfig cfg,
-			int[] palette, Chunk c, Anchor a, Vec3 cam, double timeS) {
+			ColorScheme colors, Chunk c, Anchor a, Vec3 cam, double timeS) {
 		Placement p = c.place();
 
 		// Pop up from below with a little overshoot and swing into place; shrink and sink away.
@@ -156,11 +156,11 @@ public final class SkyLyricsRenderer {
 
 		boolean note = c.kind() == Kind.NOTE;
 		FontDescription fontDesc = note ? null : fontFor(cfg);
-		int base = note ? 0xFFFFFF : palette[Math.floorMod(c.color(), palette.length)];
+		int base = note ? 0xFFFFFF : colors.base(c.color());
 		float flash = (1f - in) * 0.65f; // freshly appeared words flash brighter
 
 		FormattedCharSequence front = note ? plain(c.text(), null, 0xEEF2F8).getVisualOrderText()
-				: gradient(c.text(), fontDesc, base, cfg.shimmer ? timeS : 0, p.phase(), flash).getVisualOrderText();
+				: gradient(c.text(), fontDesc, colors, c.color(), timeS, p.phase(), flash).getVisualOrderText();
 		int widthPx = font.width(front);
 		float fullScale = BASE_SCALE * p.size() * (float) Math.max(0.1, cfg.size) * (p.distance() / REFERENCE_DISTANCE);
 
@@ -224,10 +224,10 @@ public final class SkyLyricsRenderer {
 		poseStack.popPose();
 	}
 
-	/** Front face: each letter shifts hue slightly, and the whole group shimmers over time. */
-	private static MutableComponent gradient(String text, FontDescription fontDesc, int base, double timeS, float phase, float flash) {
-		float[] hsv = Colors.toHsv(base);
-		float drift = timeS == 0 ? 0f : (float) Math.sin(timeS * 1.1 + phase) * 0.035f;
+	/** Front face: one colour per letter from the colour scheme, flashing white as it pops in. */
+	private static MutableComponent gradient(String text, FontDescription fontDesc, ColorScheme colors, int group,
+			double timeS, float phase, float flash) {
+		int letters = (int) text.codePoints().filter(cp -> !Character.isWhitespace(cp)).count();
 		MutableComponent line = Component.empty();
 		int i = 0;
 
@@ -236,7 +236,7 @@ public final class SkyLyricsRenderer {
 			String ch = new String(Character.toChars(cp));
 			off += Character.charCount(cp);
 
-			int rgb = Colors.fromHsv(hsv[0] + i * 0.022f + drift, hsv[1] * 0.92f, Math.min(1f, hsv[2] * 1.04f + 0.02f));
+			int rgb = colors.letter(group, i, letters, timeS, phase);
 			if (flash > 0f) rgb = Colors.mix(rgb, 0xFFFFFF, flash);
 			line.append(plain(ch, fontDesc, rgb));
 			if (!Character.isWhitespace(cp)) i++;
@@ -253,21 +253,13 @@ public final class SkyLyricsRenderer {
 		return c;
 	}
 
-	private static FontDescription fontFor(SkyLyricsConfig cfg) {
+	public static FontDescription fontFor(SkyLyricsConfig cfg) {
 		String f = cfg.font == null ? "block" : cfg.font.strip().toLowerCase(java.util.Locale.ROOT);
 		return switch (f) {
 			case "minecraft", "default", "vanilla" -> null;
 			case "lobster", "fancy", "script" -> LOBSTER_FONT;
 			default -> BLOCK_FONT;
 		};
-	}
-
-	private static int[] palette(SkyLyricsConfig cfg) {
-		List<String> list = cfg.colors;
-		if (list == null || list.isEmpty()) return new int[] {0xFF5C8A, 0x4DD8FF, 0xFFE45C};
-		int[] p = new int[list.size()];
-		for (int i = 0; i < p.length; i++) p[i] = SkyLyricsConfig.parseColor(list.get(i), 0xFFFFFF);
-		return p;
 	}
 
 	private static double clamp01(double v) {

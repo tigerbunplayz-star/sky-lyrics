@@ -35,6 +35,14 @@ public final class SkyLyricsConfig {
 	public List<String> colors = new ArrayList<>(List.of("#FF5C8A", "#FFB443", "#FFE45C", "#5CFF9D", "#4DD8FF", "#9B7BFF"));
 	/** Gently shift the colours over time. */
 	public boolean shimmer = true;
+	/** "original" (the colourful palette above) or "custom" (your own colour below). */
+	public String colorMode = "original";
+	/** Custom mode: main colour. */
+	public String customColor = "#4DD8FF";
+	/** Custom mode: blend each word group's letters into a second colour. */
+	public boolean customFade = true;
+	/** Custom mode: the colour the letters fade into. */
+	public String customFadeColor = "#9B7BFF";
 	/** Let the words bob and sway a little. */
 	public boolean bob = true;
 	/** How far left/right of where you look the words can appear (degrees). */
@@ -132,6 +140,18 @@ public final class SkyLyricsConfig {
 		return new LyricScene.Settings(Math.max(4, maxCharsPerGroup), Math.max(1, maxWordsPerGroup),
 				(float) Math.max(0, Math.min(80, spread)), dMin, dMax, hMin, hMax, Math.max(0, holdMs), uppercase,
 				estimateUnsyncedLyrics, (float) Math.max(0.1, animationSpeed));
+	}
+
+	public boolean isCustomColors() {
+		return "custom".equalsIgnoreCase(colorMode == null ? "" : colorMode.strip());
+	}
+
+	public dev.skylyrics.render.ColorScheme colorScheme() {
+		return new dev.skylyrics.render.ColorScheme(isCustomColors(),
+				dev.skylyrics.render.ColorScheme.parsePalette(colors),
+				dev.skylyrics.render.ColorScheme.parse(customColor, 0x4DD8FF),
+				dev.skylyrics.render.ColorScheme.parse(customFadeColor, 0x9B7BFF),
+				customFade, shimmer);
 	}
 
 	/** A full copy (used by the settings menu to undo on Cancel). */

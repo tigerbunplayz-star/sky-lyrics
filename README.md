@@ -32,7 +32,7 @@ Rebind them in Options → Controls → Key Binds → Sky Lyrics.
 
 ## Settings
 
-Press `O` in game for the settings menu: toggles, sliders for size, distance, height, spread, animation speed and fade timing, plus font and colour choices. Changes show live on the words around you (sample words appear if nothing is playing). Save keeps them, Cancel or Esc undoes them.
+Press `O` in game for the settings menu: toggles, sliders for size, distance, height, spread, animation speed and fade timing, plus font choice. The **Colors** tab switches between **Original** (the colourful palettes, the default) and **Custom**, where you pick any colour with a colour picker and can fade the letters into a second colour. Changes show live on the words around you (sample words appear if nothing is playing). Save keeps them, Cancel or Esc undoes them.
 
 Everything is also in `.minecraft/config/skylyrics.json` (created on first launch) if you prefer editing the file; restart the game after editing it.
 
@@ -44,6 +44,9 @@ Everything is also in `.minecraft/config/skylyrics.json` (created on first launc
 | `depth` | `1.0` | 3D thickness of the letters (`0` = flat) |
 | `colors` | 6 bright colours | Hex colours the word groups cycle through |
 | `shimmer` | `true` | Gently shift colours over time |
+| `colorMode` | `"original"` | `"original"` palette colours or `"custom"` |
+| `customColor` / `customFadeColor` | `#4DD8FF` / `#9B7BFF` | Custom mode colours |
+| `customFade` | `true` | Custom mode: letters fade from the main colour into the fade colour |
 | `bob` | `true` | Words bob and sway a little |
 | `spread` | `36` | How far left/right of your view words appear (degrees) |
 | `distanceMin` / `distanceMax` | `24` / `36` | How far away words appear (blocks) |

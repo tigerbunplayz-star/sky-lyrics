@@ -260,6 +260,33 @@ class CoreLogicTest {
 		assertEquals(5_000, e.snapshot(2000 * MS, 0).positionMs(), 30);
 	}
 
+	@Test
+	void originalColorsMatchPreviousLook() {
+		int[] palette = {0xFF5C8A, 0x4DD8FF};
+		dev.skylyrics.render.ColorScheme cs = new dev.skylyrics.render.ColorScheme(false, palette, 0, 0, true, false);
+		assertEquals(0x4DD8FF, cs.base(1));
+		assertEquals(0xFF5C8A, cs.base(2));
+		float[] hsv = Colors.toHsv(0xFF5C8A);
+		int expected = Colors.fromHsv(hsv[0] + 3 * 0.022f, hsv[1] * 0.92f, Math.min(1f, hsv[2] * 1.04f + 0.02f));
+		assertEquals(expected, cs.letter(0, 3, 6, 0, 0));
+	}
+
+	@Test
+	void customColorsFadeAcrossLetters() {
+		dev.skylyrics.render.ColorScheme fade = new dev.skylyrics.render.ColorScheme(true, null, 0xFF0000, 0x0000FF, true, false);
+		assertEquals(0xFF0000, fade.letter(5, 0, 5, 0, 0));
+		assertEquals(0x0000FF, fade.letter(5, 4, 5, 0, 0));
+		assertEquals(Colors.mix(0xFF0000, 0x0000FF, 0.5f), fade.letter(5, 2, 5, 0, 0));
+		assertEquals(Colors.mix(0xFF0000, 0x0000FF, 0.5f), fade.base(7));
+
+		dev.skylyrics.render.ColorScheme solid = new dev.skylyrics.render.ColorScheme(true, null, 0x00FF00, 0x0000FF, false, false);
+		assertEquals(0x00FF00, solid.letter(0, 3, 5, 0, 0));
+		assertEquals(0x00FF00, solid.base(0));
+		assertEquals("#00FF00", dev.skylyrics.render.ColorScheme.hex(0x00FF00));
+		assertEquals(0x12ABEF, dev.skylyrics.render.ColorScheme.parse("#12abef", 0));
+		assertEquals(7, dev.skylyrics.render.ColorScheme.parse("nope", 7));
+	}
+
 	private static List<String> texts(List<LyricScene.Chunk> chunks) {
 		return chunks.stream().filter(c -> c.kind() == LyricScene.Kind.LYRIC).map(LyricScene.Chunk::text).toList();
 	}

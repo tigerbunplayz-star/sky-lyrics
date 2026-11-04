@@ -15,10 +15,14 @@ import net.minecraft.network.chat.MutableComponent;
 
 import dev.skylyrics.SkyLyricsConfig;
 import dev.skylyrics.gui.SettingsModel.Choice;
+import dev.skylyrics.gui.SettingsModel.Picker;
+import dev.skylyrics.gui.SettingsModel.Preview;
+import dev.skylyrics.gui.SettingsModel.Swatch;
 import dev.skylyrics.gui.SettingsModel.Entry;
 import dev.skylyrics.gui.SettingsModel.Slider;
 import dev.skylyrics.gui.SettingsModel.Tab;
 import dev.skylyrics.gui.SettingsModel.Toggle;
+import dev.skylyrics.render.ColorScheme;
 import dev.skylyrics.render.Colors;
 import dev.skylyrics.render.SkyLyricsRenderer;
 
@@ -59,6 +63,13 @@ public final class SkyLyricsScreen extends Screen {
 	private int tab;
 	private float scroll;
 	private Slider dragging;
+	/** Colour picker state: which swatch is edited, what is being dragged, last drawn geometry. */
+	private int pickerTarget;
+	private int pickerDrag; // 0 none, 1 square, 2 hue bar
+	private Picker pickerEntry;
+	private float[] pickerHsv = {0.55f, 0.7f, 1f};
+	private String pickerHex = "";
+	private int sqX, sqY, sqW, sqH, hueX, hueW;
 	private boolean saved;
 	private long openedNanos;
 
@@ -203,18 +214,24 @@ public final class SkyLyricsScreen extends Screen {
 		clampScroll();
 		g.enableScissor(left - 2, top, right + 2, bottom);
 
-		for (int i = 0; i < t.entries().size(); i++) {
-			Entry e = t.entries().get(i);
-			int ry = rowY(i);
-			if (ry + ROW_H < top || ry > bottom) continue;
-			boolean hover = inside(mx, my, left, ry, right, ry + ROW_H) && my >= top && my < bottom;
-			g.fill(left, ry, right, ry + ROW_H, hover || e == dragging ? ROW_HOVER : ROW);
+		List<Entry> rows = t.visible(config);
+
+		for (int i = 0; i < rows.size(); i++) {
+			Entry e = rows.get(i);
+			int ry = rowY(rows, i);
+			int rh = e.height();
+			if (ry + rh < top || ry > bottom) continue;
+			boolean hover = inside(mx, my, left, ry, right, ry + rh) && my >= top && my < bottom;
+			boolean busy = e == dragging || (e == pickerEntry && pickerDrag != 0);
+			g.fill(left, ry, right, ry + rh, (hover && !(e instanceof Picker)) || busy ? ROW_HOVER : ROW);
 			g.text(font, e.label(), left + 9, ry + 8, TEXT, false);
 
 			switch (e) {
 				case Toggle tg -> drawToggle(g, tg, right, ry);
 				case Slider sl -> drawSlider(g, sl, right, ry, hover);
 				case Choice ch -> drawChoice(g, ch, right, ry, mx, my, hover);
+				case Picker pk -> drawPicker(g, pk, left, right, ry, mx, my);
+				case Preview pv -> drawPreview(g, left, right, ry);
 			}
 		}
 
@@ -284,12 +301,202 @@ public final class SkyLyricsScreen extends Screen {
 		g.text(font, "›", x2 - 9, ry + 8, hover && !leftHalf ? (0xFF000000 | CYAN) : TEXT_DIM, false);
 	}
 
-	private int rowY(int i) {
-		return listTop() + 4 + i * (ROW_H + ROW_GAP) - Math.round(scroll);
+	private Swatch target(Picker p) {
+		if (pickerTarget >= p.swatches().size() || !p.swatches().get(pickerTarget).enabled().test(config)) pickerTarget = 0;
+		return p.swatches().get(pickerTarget);
+	}
+
+	/** Keep an HSV copy of the edited colour so hue survives greys and blacks. */
+	private void syncPickerHsv(Swatch sw) {
+		String hex = sw.get().apply(config);
+		if (hex != null && hex.equalsIgnoreCase(pickerHex)) return;
+		float[] hsv = Colors.toHsv(ColorScheme.parse(hex, 0x4DD8FF));
+		if (hsv[1] < 0.01f || hsv[2] < 0.01f) hsv[0] = pickerHsv[0];
+		pickerHsv = hsv;
+		pickerHex = hex == null ? "" : hex;
+	}
+
+	private void setPickerColor(Swatch sw, int rgb) {
+		String hex = ColorScheme.hex(rgb);
+		sw.set().accept(config, hex);
+		pickerHex = "";
+		syncPickerHsv(sw);
+	}
+
+	private void setPickerHsv(Swatch sw) {
+		String hex = ColorScheme.hex(Colors.fromHsv(pickerHsv[0], pickerHsv[1], pickerHsv[2]));
+		sw.set().accept(config, hex);
+		pickerHex = hex;
+	}
+
+	private void drawPicker(GuiGraphicsExtractor g, Picker p, int left, int right, int ry, int mx, int my) {
+		pickerEntry = p;
+		Swatch sw = target(p);
+		syncPickerHsv(sw);
+
+		sqX = left + 9;
+		sqY = ry + 21;
+		sqW = Math.max(60, Math.min(112, (right - left) / 2 - 24));
+		sqH = 70;
+		hueX = sqX + sqW + 6;
+		hueW = 10;
+
+		// Saturation (left→right) × brightness (top→bottom) for the current hue.
+		for (int x = 0; x < sqW; x += 2) {
+			float sat = x / (float) Math.max(1, sqW - 1);
+			int top = Colors.fromHsv(pickerHsv[0], sat, 1f);
+			g.fillGradient(sqX + x, sqY, Math.min(sqX + sqW, sqX + x + 2), sqY + sqH, 0xFF000000 | top, 0xFF000000);
+		}
+
+		int kx = sqX + Math.round(pickerHsv[1] * (sqW - 1));
+		int ky = sqY + Math.round((1f - pickerHsv[2]) * (sqH - 1));
+		g.fill(kx - 3, ky - 3, kx + 4, ky + 4, 0xFFFFFFFF);
+		g.fill(kx - 2, ky - 2, kx + 3, ky + 3, 0xFF000000 | Colors.fromHsv(pickerHsv[0], pickerHsv[1], pickerHsv[2]));
+
+		// Hue bar.
+		for (int y = 0; y < sqH; y += 2) {
+			g.fill(hueX, sqY + y, hueX + hueW, Math.min(sqY + sqH, sqY + y + 2), 0xFF000000 | Colors.fromHsv(y / (float) sqH, 1f, 1f));
+		}
+
+		int hy = sqY + Math.round(pickerHsv[0] * (sqH - 1));
+		g.fill(hueX - 2, hy - 1, hueX + hueW + 2, hy + 2, 0xFFFFFFFF);
+
+		// Swatches: click one to edit it.
+		int infoX = hueX + hueW + 14;
+
+		for (int k = 0; k < p.swatches().size(); k++) {
+			Swatch s = p.swatches().get(k);
+			boolean on = s.enabled().test(config);
+			int y = sqY + k * 22;
+			int rgb = ColorScheme.parse(s.get().apply(config), 0xFFFFFF);
+			boolean selected = k == pickerTarget && on;
+
+			g.fill(infoX - 1, y - 1, infoX + 19, y + 17, selected ? 0xFFFFFFFF : 0xFF3A3566);
+			g.fill(infoX, y, infoX + 18, y + 16, on ? (0xFF000000 | rgb) : 0xFF2A2650);
+			g.text(font, s.name(), infoX + 24, y + 4, on ? (selected ? TEXT : 0xFFCFCAF2) : TEXT_FAINT, false);
+			String hex = on ? ColorScheme.hex(rgb) : "off";
+			g.text(font, hex, right - 9 - font.width(hex), y + 4, on ? 0xFFB9B3E6 : TEXT_FAINT, false);
+		}
+
+		// Quick colours.
+		int dx = infoX, dy = sqY + sqH - 10;
+		for (int c : SettingsModel.QUICK_COLORS) {
+			if (dx + 9 > right - 9) break;
+			boolean hover = inside(mx, my, dx, dy, dx + 9, dy + 9);
+			g.fill(dx - 1, dy - 1, dx + 10, dy + 10, hover ? 0xFFFFFFFF : 0xFF3A3566);
+			g.fill(dx, dy, dx + 9, dy + 9, 0xFF000000 | c);
+			dx += 13;
+		}
+	}
+
+	private boolean pickerClick(Picker p, double mx, double my) {
+		Swatch sw = target(p);
+
+		if (inside(mx, my, sqX, sqY, sqX + sqW, sqY + sqH)) {
+			pickerDrag = 1;
+			pickerDragTo(mx, my);
+			return true;
+		}
+
+		if (inside(mx, my, hueX - 2, sqY, hueX + hueW + 2, sqY + sqH)) {
+			pickerDrag = 2;
+			pickerDragTo(mx, my);
+			return true;
+		}
+
+		int infoX = hueX + hueW + 14;
+
+		for (int k = 0; k < p.swatches().size(); k++) {
+			int y = sqY + k * 22;
+			if (inside(mx, my, infoX - 1, y - 1, contentRight() - 9, y + 17) && p.swatches().get(k).enabled().test(config)) {
+				pickerTarget = k;
+				pickerHex = "";
+				return true;
+			}
+		}
+
+		int dx = infoX, dy = sqY + sqH - 10;
+		for (int c : SettingsModel.QUICK_COLORS) {
+			if (dx + 9 > contentRight() - 9) break;
+			if (inside(mx, my, dx - 1, dy - 1, dx + 10, dy + 10)) {
+				setPickerColor(sw, c);
+				return true;
+			}
+			dx += 13;
+		}
+
+		return false;
+	}
+
+	private void pickerDragTo(double mx, double my) {
+		if (pickerEntry == null) return;
+		Swatch sw = target(pickerEntry);
+
+		if (pickerDrag == 1) {
+			pickerHsv[1] = (float) Math.max(0, Math.min(1, (mx - sqX) / Math.max(1, sqW - 1)));
+			pickerHsv[2] = (float) Math.max(0, Math.min(1, 1 - (my - sqY) / Math.max(1, sqH - 1)));
+		} else if (pickerDrag == 2) {
+			pickerHsv[0] = (float) Math.max(0, Math.min(0.999, (my - sqY) / Math.max(1, sqH - 1)));
+		}
+
+		setPickerHsv(sw);
+	}
+
+	/** A sample of three word groups in the current font and colours, with a little 3D edge. */
+	private void drawPreview(GuiGraphicsExtractor g, int left, int right, int ry) {
+		ColorScheme cs = config.colorScheme();
+		double timeS = (System.nanoTime() % 3_600_000_000_000L) / 1e9;
+		String[] words = config.uppercase ? new String[] {"SKY", "LYRICS", "LIVE"} : new String[] {"Sky", "Lyrics", "live"};
+		var fontDesc = SkyLyricsRenderer.fontFor(config);
+
+		MutableComponent front = Component.empty();
+		MutableComponent back = Component.empty();
+
+		for (int w = 0; w < words.length; w++) {
+			String word = words[w];
+			int n = word.length();
+
+			for (int i = 0; i < n; i++) {
+				String ch = String.valueOf(word.charAt(i));
+				MutableComponent f = Component.literal(ch).withColor(cs.letter(w, i, n, timeS, w * 1.3f));
+				MutableComponent b = Component.literal(ch).withColor(Colors.scale(cs.base(w), 0.4f));
+				if (fontDesc != null) {
+					f = f.withStyle(st -> st.withFont(fontDesc));
+					b = b.withStyle(st -> st.withFont(fontDesc));
+				}
+				front.append(f);
+				back.append(b);
+			}
+
+			if (w < words.length - 1) {
+				front.append(" ");
+				back.append(" ");
+			}
+		}
+
+		float scale = 1.4f;
+		int textW = Math.round(font.width(front) * scale);
+		int x = Math.max(left + 70, right - 12 - textW);
+		int y = ry + 9;
+
+		g.pose().pushMatrix();
+		g.pose().translate(x, y);
+		g.pose().scale(scale);
+		g.text(font, back, 1, 1, 0xFFFFFFFF, false);
+		g.text(font, front, 0, 0, 0xFFFFFFFF, false);
+		g.pose().popMatrix();
+	}
+
+	private int rowY(List<Entry> rows, int i) {
+		int y = listTop() + 4 - Math.round(scroll);
+		for (int k = 0; k < i; k++) y += rows.get(k).height() + ROW_GAP;
+		return y;
 	}
 
 	private int contentHeight() {
-		return 8 + tabs.get(tab).entries().size() * (ROW_H + ROW_GAP);
+		int h = 8;
+		for (Entry e : tabs.get(tab).visible(config)) h += e.height() + ROW_GAP;
+		return h;
 	}
 
 	private void clampScroll() {
@@ -299,11 +506,11 @@ public final class SkyLyricsScreen extends Screen {
 
 	private Entry entryAt(double mx, double my) {
 		if (my < listTop() || my >= listBottom()) return null;
-		List<Entry> entries = tabs.get(tab).entries();
+		List<Entry> entries = tabs.get(tab).visible(config);
 
 		for (int i = 0; i < entries.size(); i++) {
-			int ry = rowY(i);
-			if (inside(mx, my, contentLeft(), ry, contentRight(), ry + ROW_H)) return entries.get(i);
+			int ry = rowY(entries, i);
+			if (inside(mx, my, contentLeft(), ry, contentRight(), ry + entries.get(i).height())) return entries.get(i);
 		}
 
 		return null;
@@ -366,6 +573,7 @@ public final class SkyLyricsScreen extends Screen {
 			if (inside(mx, my, px + 6, ty, px + SIDEBAR_W - 6, ty + 20)) {
 				tab = i;
 				scroll = 0;
+				pickerEntry = null;
 				return true;
 			}
 			ty += 24;
@@ -406,6 +614,9 @@ public final class SkyLyricsScreen extends Screen {
 					dragging = s;
 					setSlider(s, mx);
 				}
+				case Picker pk -> pickerClick(pk, mx, my);
+				case Preview pv -> {
+				}
 			}
 
 			return true;
@@ -421,13 +632,19 @@ public final class SkyLyricsScreen extends Screen {
 			return true;
 		}
 
+		if (pickerDrag != 0) {
+			pickerDragTo(event.x(), event.y());
+			return true;
+		}
+
 		return super.mouseDragged(event, dx, dy);
 	}
 
 	@Override
 	public boolean mouseReleased(MouseButtonEvent event) {
-		if (dragging != null) {
+		if (dragging != null || pickerDrag != 0) {
 			dragging = null;
+			pickerDrag = 0;
 			return true;
 		}
 
