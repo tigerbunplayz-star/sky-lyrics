@@ -47,6 +47,18 @@ jobs:
               javap -public -cp "$jar" net.minecraft.network.chat.Component 2>&1 | grep -E 'literal|VisualOrder' >> probe.txt || true
               cls=$(unzip -l "$jar" | grep -oE 'net/minecraft/[A-Za-z/]*CameraRenderState.class' | head -1 | sed 's#/#.#g; s#.class$##')
               [ -n "$cls" ] && javap -public -cp "$jar" "$cls" >> probe.txt 2>&1 || true
+              echo "== CLASSES" >> probe.txt
+              unzip -l "$jar" | grep -oE 'net/minecraft/client/renderer/[A-Za-z/$]*(SubmitNodeCollection|TextSubmit|NameTag|Camera)[A-Za-z$]*\.class' >> probe.txt || true
+              echo "== submitText impl" >> probe.txt
+              javap -c -p -cp "$jar" net.minecraft.client.renderer.SubmitNodeCollection 2>&1 | sed -n '/submitText(/,/^$/p' | head -60 >> probe.txt || true
+              for c in $(unzip -l "$jar" | grep -oE 'net/minecraft/client/renderer/[A-Za-z/$]*TextSubmit\.class' | sed 's#/#.#g; s#.class$##'); do
+                echo "== $c" >> probe.txt; javap -p -cp "$jar" "$c" >> probe.txt 2>&1 || true
+              done
+              echo "== Camera.setRotation" >> probe.txt
+              javap -c -p -cp "$jar" net.minecraft.client.Camera 2>&1 | sed -n '/void setRotation(/,/^$/p' | head -50 >> probe.txt || true
+              for c in $(unzip -l "$jar" | grep -oE 'net/minecraft/client/renderer/[A-Za-z/]*NameTag[A-Za-z]*Renderer\.class' | sed 's#/#.#g; s#.class$##'); do
+                echo "== $c" >> probe.txt; javap -c -p -cp "$jar" "$c" 2>&1 | grep -E 'mulPose|scale|ldc|Method .*(drawInBatch|render)|orientation' | head -40 >> probe.txt || true
+              done
               break
             fi
           done
