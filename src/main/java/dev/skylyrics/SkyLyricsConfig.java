@@ -69,6 +69,10 @@ public final class SkyLyricsConfig {
 	 * Press ; in game the moment you hear a line start to line them up.
 	 */
 	public boolean estimateUnsyncedLyrics = true;
+	/** AI lyric maker: song language ("auto", "hu", "en"). */
+	public String aiLanguage = "auto";
+	/** AI lyric maker: speech model, "small" (fast) or "medium" (better, slower). */
+	public String aiModel = "small";
 	/**
 	 * Also look on YouTube Music when LRCLIB has no synced lyrics. Uses YouTube Music's
 	 * unofficial app interface, so it may stop working if YouTube changes it.

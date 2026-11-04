@@ -19,6 +19,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.fabricmc.loader.api.FabricLoader;
 
 import dev.skylyrics.gui.SkyLyricsScreen;
+import dev.skylyrics.ai.AiLyricsMaker;
 import dev.skylyrics.gui.SettingsModel;
 import dev.skylyrics.lyrics.LinkStore;
 import dev.skylyrics.lyrics.LocalLyrics;
@@ -41,6 +42,7 @@ public final class SkyLyricsClient implements ClientModInitializer {
 	private LyricsService lyrics;
 	private LocalLyrics localLyrics;
 	private LinkStore links;
+	private AiLyricsMaker ai;
 	private SkyLyricsRenderer renderer;
 
 	private KeyMapping toggleKey;
@@ -62,6 +64,11 @@ public final class SkyLyricsClient implements ClientModInitializer {
 		YtMusicLyricsClient youtube = new YtMusicLyricsClient(config.youtubeRegion());
 		localLyrics = new LocalLyrics(configDir.resolve("skylyrics").resolve("lyrics"));
 		links = new LinkStore(localLyrics.dir().resolve("links.json"));
+		ai = new AiLyricsMaker(AiLyricsMaker.defaultHome(configDir.resolve("skylyrics").resolve("ai")), file -> {
+			lyrics.clearCache();
+			engine.refetch();
+			renderer.showNotice("AI lyrics ready: " + file.getFileName(), 5_000_000_000L);
+		});
 		lyrics = new LyricsService(localLyrics, links, lrclib, youtube, () -> config.youtubeMusicLyrics);
 		engine = new LyricsEngine(lyrics::fetch);
 		renderer = new SkyLyricsRenderer(() -> config, engine);
@@ -150,6 +157,58 @@ public final class SkyLyricsClient implements ClientModInitializer {
 				}
 			}
 
+			public String aiStatus() {
+				return ai.status();
+			}
+
+			public boolean aiInstalled() {
+				return ai.isInstalled();
+			}
+
+			public boolean aiBusy() {
+				return ai.isBusy();
+			}
+
+			public boolean aiListening() {
+				return ai.isListening();
+			}
+
+			public void aiInstall() {
+				if (!WindowsMediaSource.isSupported()) {
+					renderer.showNotice("The AI maker needs Windows");
+					return;
+				}
+				ai.install(config.aiModel);
+				renderer.showNotice("Installing the AI in the background\u2026 (see the AI maker tab)", 3_000_000_000L);
+			}
+
+			public void aiToggle() {
+				if (ai.isListening()) {
+					ai.stopListening();
+					renderer.showNotice("The AI is working on the lyrics\u2026", 3_000_000_000L);
+					return;
+				}
+
+				NowPlaying np = engine.currentTrack();
+				if (np == null) {
+					renderer.showNotice("Play the song first");
+					return;
+				}
+
+				java.nio.file.Path out = localLyrics.dir().resolve(LocalLyrics.fileName(np.artist(), np.title()));
+				if (java.nio.file.Files.exists(out) && !isAiFile(out)) {
+					renderer.showNotice("You already have a lyrics file for this song (delete it first)", 3_500_000_000L);
+					return;
+				}
+
+				long pos = Math.round(engine.snapshot(System.nanoTime(), 0).positionMs());
+				long maxSeconds = np.durationMs() > 0 ? (np.durationMs() - pos) / 1000 + 15 : 900;
+
+				if (ai.start(np, pos, out, config.aiLanguage, config.aiModel, maxSeconds)) {
+					renderer.showNotice(pos > 5_000 ? "Listening\u2026 (from the start gives full lyrics)" : "Listening\u2026 let the song play to the end", 3_500_000_000L);
+				}
+			}
+
 			public void toggleRecording() {
 				if (engine.isRecording()) {
 					finishRecording();
@@ -160,6 +219,14 @@ public final class SkyLyricsClient implements ClientModInitializer {
 				}
 			}
 		};
+	}
+
+	private static boolean isAiFile(java.nio.file.Path f) {
+		try {
+			return java.nio.file.Files.readString(f).contains("[by:Sky Lyrics AI");
+		} catch (java.io.IOException | RuntimeException e) {
+			return false;
+		}
 	}
 
 	/** Text on the clipboard (GLFW, on the render thread where the game window is current). */
@@ -240,6 +307,17 @@ public final class SkyLyricsClient implements ClientModInitializer {
 			Long shift = engine.syncLineStartsNow(System.nanoTime(), config.offsetMs);
 			renderer.showNotice(shift == null ? "No lyrics to sync"
 					: shift == 0 ? "Lyrics synced" : "Lyrics synced (" + (shift > 0 ? "+" : "") + shift + " ms)");
+		}
+
+		if (ai.isListening()) {
+			NowPlaying np = engine.currentTrack();
+			boolean ended = np != null && np.durationMs() > 0
+					&& engine.snapshot(System.nanoTime(), 0).positionMs() > np.durationMs() - 1_500;
+
+			if (np == null || !np.trackKey().equals(ai.songKey()) || ended) {
+				ai.stopListening();
+				renderer.showNotice("Song finished \u2013 the AI is writing the lyrics\u2026", 3_500_000_000L);
+			}
 		}
 
 		if (engine.isRecording()) {

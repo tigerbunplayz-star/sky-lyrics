@@ -14,9 +14,27 @@ $ProgressPreference = 'SilentlyContinue'
 function Say([string]$line) { [Console]::Out.WriteLine($line); [Console]::Out.Flush() }
 function Progress([int]$pct, [string]$text) { Say "PROGRESS $pct $text" }
 
+# Run a program, passing each output line to $onLine. Windows PowerShell 5.1 turns a
+# program's stderr into errors, so 'Stop' mode is switched off while it runs.
+function RunNative([string]$exe, [string[]]$exeArgs, [scriptblock]$onLine) {
+    $old = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $exe @exeArgs 2>&1 | ForEach-Object {
+            $l = if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.Exception.Message } else { "$_" }
+            & $onLine $l
+        }
+        return $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $old
+    }
+}
+
+function ToErr([string]$l) { [Console]::Error.WriteLine($l) }
+
 function Pip([string[]]$pipArgs) {
-    & $python -m pip install --disable-pip-version-check --no-warn-script-location @pipArgs 2>&1 | ForEach-Object { [Console]::Error.WriteLine($_) }
-    if ($LASTEXITCODE -ne 0) { throw "pip install failed: $($pipArgs -join ' ')" }
+    $code = RunNative $python (@('-m', 'pip', 'install', '--disable-pip-version-check', '--no-warn-script-location') + $pipArgs) { param($l) ToErr $l }
+    if ($code -ne 0) { throw "pip install failed: $($pipArgs -join ' ')" }
 }
 
 try {
@@ -44,8 +62,8 @@ try {
     Progress 8 'installing pip'
     $getPip = Join-Path $Dir 'get-pip.py'
     Invoke-WebRequest 'https://bootstrap.pypa.io/get-pip.py' -OutFile $getPip -UseBasicParsing
-    & $python $getPip --no-warn-script-location 2>&1 | ForEach-Object { [Console]::Error.WriteLine($_) }
-    if ($LASTEXITCODE -ne 0) { throw 'installing pip failed' }
+    $code = RunNative $python @($getPip, '--no-warn-script-location') { param($l) ToErr $l }
+    if ($code -ne 0) { throw 'installing pip failed' }
     Remove-Item $getPip -Force
 
     Progress 15 'installing PyTorch (the biggest download)'
@@ -56,13 +74,15 @@ try {
 
     Progress 75 'downloading the AI models'
     $script = Join-Path $Dir 'lyric_maker.py'
-    & $python $script --warmup --models (Join-Path $Dir 'models') --model $Model 2>&1 | ForEach-Object {
-        $l = "$_"
+    $script:warmupError = $null
+    $code = RunNative $python @($script, '--warmup', '--models', (Join-Path $Dir 'models'), '--model', $Model) {
+        param($l)
         if ($l -match '^PROGRESS (\d+) (.*)$') { Progress (75 + [int]$Matches[1] / 4) $Matches[2] }
-        elseif ($l -match '^(DONE|ERROR) ') { if ($l -match '^ERROR (.*)$') { throw $Matches[1] } }
-        else { [Console]::Error.WriteLine($l) }
+        elseif ($l -match '^ERROR (.*)$') { $script:warmupError = $Matches[1] }
+        elseif ($l -notmatch '^DONE ') { ToErr $l }
     }
-    if ($LASTEXITCODE -ne 0) { throw 'downloading the models failed' }
+    if ($script:warmupError) { throw $script:warmupError }
+    if ($code -ne 0) { throw 'downloading the models failed' }
 
     Set-Content -Path $ready -Value "installed $(Get-Date -Format s)" -Encoding ASCII
     Progress 100 'ready'

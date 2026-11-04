@@ -25,10 +25,12 @@ jobs:
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
           Copy-Item src/main/resources/skylyrics/ai/lyric_maker.py $dir
           $t0 = Get-Date
-          powershell -NoProfile -ExecutionPolicy Bypass -File src/main/resources/skylyrics/ai/setup_ai.ps1 -Dir $dir 2> setup-err.txt | Tee-Object setup-out.txt
+          $p = Start-Process powershell -Wait -PassThru -NoNewWindow -RedirectStandardOutput setup-out.txt -RedirectStandardError setup-err.txt `
+            -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','src/main/resources/skylyrics/ai/setup_ai.ps1','-Dir',$dir
+          "exit code $($p.ExitCode)" | Out-File -Append -Encoding ascii setup-out.txt
           $mins = [math]::Round(((Get-Date) - $t0).TotalMinutes, 1)
           $size = [math]::Round(((Get-ChildItem $dir -Recurse -File | Measure-Object Length -Sum).Sum) / 1GB, 2)
-          "setup took $mins min, folder is $size GB" | Tee-Object -Append setup-out.txt
+          "setup took $mins min, folder is $size GB" | Out-File -Append -Encoding ascii setup-out.txt
           if (-not (Test-Path (Join-Path $dir 'ready.txt'))) {
             $tail = (Get-Content setup-err.txt -Tail 25) -join '%0A'
             Write-Output "::error title=AI setup failed::$((Get-Content setup-out.txt) -join '%0A')%0A--- stderr%0A$tail"
@@ -77,9 +79,11 @@ jobs:
           $dir = Join-Path $env:RUNNER_TEMP 'ai'
           $py = Join-Path $dir 'python\python.exe'
           $t0 = Get-Date
-          & $py (Join-Path $dir 'lyric_maker.py') --process test-song.wav --out out.lrc --models (Join-Path $dir 'models') --lang en --title 'Test Song' --artist 'Sky Lyrics' 2> maker-err.txt | Tee-Object maker-out.txt
+          $p = Start-Process $py -Wait -PassThru -NoNewWindow -RedirectStandardOutput maker-out.txt -RedirectStandardError maker-err.txt `
+            -ArgumentList (Join-Path $dir 'lyric_maker.py'),'--process','test-song.wav','--out','out.lrc','--models',(Join-Path $dir 'models'),'--lang','en','--title','"Test Song"','--artist','"Sky Lyrics"'
+          Get-Content maker-out.txt -Tail 5
           $secs = [math]::Round(((Get-Date) - $t0).TotalSeconds)
-          "took $secs s for a 20 s song" | Tee-Object -Append maker-out.txt
+          "took $secs s for a 20 s song" | Out-File -Append -Encoding ascii maker-out.txt
           if (-not (Test-Path out.lrc)) {
             $tail = (Get-Content maker-err.txt -Tail 25) -join '%0A'
             Write-Output "::error title=AI maker failed::$((Get-Content maker-out.txt -Tail 10) -join '%0A')%0A--- stderr%0A$tail"

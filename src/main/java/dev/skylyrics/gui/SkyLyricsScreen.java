@@ -17,6 +17,7 @@ import dev.skylyrics.SkyLyricsConfig;
 import dev.skylyrics.gui.SettingsModel.Action;
 import dev.skylyrics.gui.SettingsModel.Choice;
 import dev.skylyrics.gui.SettingsModel.Info;
+import dev.skylyrics.gui.SettingsModel.Note;
 import dev.skylyrics.gui.SettingsModel.Picker;
 import dev.skylyrics.gui.SettingsModel.Preview;
 import dev.skylyrics.gui.SettingsModel.Swatch;
@@ -244,7 +245,7 @@ public final class SkyLyricsScreen extends Screen {
 			boolean hover = inside(mx, my, left, ry, right, ry + rh) && my >= top && my < bottom;
 			boolean busy = e == dragging || (e == pickerEntry && pickerDrag != 0);
 			g.fill(left, ry, right, ry + rh, (hover && !(e instanceof Picker)) || busy ? ROW_HOVER : ROW);
-			g.text(font, e.label(), left + 9, ry + 8, TEXT, false);
+			if (!(e instanceof Note)) g.text(font, e.label(), left + 9, ry + 8, TEXT, false);
 
 			switch (e) {
 				case Toggle tg -> drawToggle(g, tg, right, ry);
@@ -257,6 +258,12 @@ public final class SkyLyricsScreen extends Screen {
 					g.text(font, v, right - 9 - font.width(v), ry + 8, 0xFFDAD5FF, false);
 				}
 				case Action ac -> drawAction(g, ac, right, ry, mx, my);
+				case Note nt -> {
+					int tw = font.width(nt.tag()) + 8;
+					g.fill(left + 9, ry + 6, left + 9 + tw, ry + 17, 0xFFFFC94D);
+					g.text(font, nt.tag(), left + 13, ry + 8, 0xFF2A1F00, false);
+					g.textWithWordWrap(font, Component.literal(nt.label()), left + 15 + tw, ry + 7, right - left - tw - 26, 0xFFCFCAF2);
+				}
 			}
 		}
 
@@ -696,6 +703,8 @@ public final class SkyLyricsScreen extends Screen {
 				case Preview pv -> {
 				}
 				case Info in -> {
+				}
+				case Note nt -> {
 				}
 				case Action ac -> {
 					int ry = rowY(tabs.get(tab).visible(config), tabs.get(tab).visible(config).indexOf(ac));

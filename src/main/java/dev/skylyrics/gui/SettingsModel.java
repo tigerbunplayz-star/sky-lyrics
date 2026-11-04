@@ -12,7 +12,7 @@ import dev.skylyrics.SkyLyricsConfig;
 
 /** What the settings menu shows: tabs of toggles, sliders and choices bound to config fields. */
 public final class SettingsModel {
-	public sealed interface Entry permits Toggle, Slider, Choice, Picker, Preview, Info, Action {
+	public sealed interface Entry permits Toggle, Slider, Choice, Picker, Preview, Info, Action, Note {
 		String label();
 
 		String help();
@@ -95,6 +95,16 @@ public final class SettingsModel {
 		}
 	}
 
+	/** A short warning with a coloured tag ("BETA"). */
+	public record Note(String label, String help, String tag) implements Entry {
+		public int height() {
+			return 40;
+		}
+
+		public void reset(SkyLyricsConfig cfg, SkyLyricsConfig defaults) {
+		}
+	}
+
 	/** A button. {@code closesMenu}: save settings and close the menu after running it. */
 	public record Action(String label, String help, java.util.function.Supplier<String> button,
 			java.util.function.BooleanSupplier enabled, Runnable run, boolean closesMenu) implements Entry {
@@ -125,6 +135,20 @@ public final class SettingsModel {
 		void removeLink();
 
 		boolean hasSong();
+
+		/** AI lyric maker: one-line status. */
+		String aiStatus();
+
+		boolean aiInstalled();
+
+		boolean aiBusy();
+
+		boolean aiListening();
+
+		void aiInstall();
+
+		/** Start listening to the current song, or (while listening) stop and make the lyrics. */
+		void aiToggle();
 	}
 
 	/** A sample word drawn with the current colours. */
@@ -186,6 +210,7 @@ public final class SettingsModel {
 								c -> indexOf(PLAYERS, c.player == null ? "spotify" : c.player.strip().toLowerCase(Locale.ROOT)),
 								(c, i) -> c.player = PLAYERS.get(i)))),
 				myLyricsTab(actions),
+				aiTab(actions),
 				new Tab("Look", "✦", "Font, size and style of the words", List.of(
 						new Choice("Font", "Chunky block letters, a fancy script, or the Minecraft font",
 								List.of("Block", "Script", "Minecraft"),
@@ -242,6 +267,23 @@ public final class SettingsModel {
 				new Action("Record timing", "Tap the sync key (;) at the start of every line; saves an .lrc file",
 						() -> a.isRecording() ? "Stop & save" : "Start", () -> a.isRecording() || a.canRecord(),
 						a::toggleRecording, true)));
+	}
+
+	private static Tab aiTab(MenuActions a) {
+		return new Tab("AI maker", "\u2727", "Let an AI write lyrics for songs that have none", List.of(
+				new Note("AI lyrics are guesses: rap and fast songs get mistakes, so fix the .lrc file after. It listens to your PC's sound while the song plays; nothing is uploaded and the recording is deleted.",
+						"", "BETA"),
+				new Info("Status", "What the AI is doing", a::aiStatus),
+				new Action("Install the AI", "One-time download of about 1 to 1.5 GB (Python, Demucs, Whisper); takes a few minutes",
+						() -> a.aiInstalled() ? "Reinstall" : "Install", () -> !a.aiBusy(), a::aiInstall, false),
+				new Action("Make lyrics for this song", "Start the song from the beginning, click Start, let it play to the end; the AI then works for a few minutes",
+						() -> a.aiListening() ? "Stop & make" : "Start", () -> a.aiListening() || (a.aiInstalled() && !a.aiBusy() && a.hasSong()),
+						a::aiToggle, true),
+				new Choice("Language", "Language of the song (Auto lets the AI guess)", List.of("Auto", "Hungarian", "English"),
+						c -> switch (c.aiLanguage == null ? "auto" : c.aiLanguage) { case "hu" -> 1; case "en" -> 2; default -> 0; },
+						(c, i) -> c.aiLanguage = List.of("auto", "hu", "en").get(i)),
+				new Choice("Quality", "Better is more accurate but slower and downloads about 1 GB more the first time", List.of("Fast", "Better"),
+						c -> "medium".equals(c.aiModel) ? 1 : 0, (c, i) -> c.aiModel = i == 1 ? "medium" : "small")));
 	}
 
 	private static Tab colorsTab() {
