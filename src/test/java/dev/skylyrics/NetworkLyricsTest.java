@@ -29,7 +29,9 @@ class NetworkLyricsTest {
 			new Song("Blinding Lights", "The Weeknd", 200_040),
 			new Song("Bohemian Rhapsody - Remastered 2011", "Queen", 354_320),
 			new Song("Introvertált dal", "Azahriah", 0),
-			new Song("Valami Amerika", "Halott Pénz", 0));
+			new Song("Valami Amerika", "Halott Pénz", 0),
+			new Song("TOP 1", "Saki & Baleszko", 0),
+			new Song("TOP 1", "Saki", 0));
 
 	@Test
 	void reportLiveLookups() throws Exception {
