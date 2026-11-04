@@ -27,7 +27,8 @@ public final class WindowsMediaSource implements AutoCloseable {
 	/** Drop the reading if the helper goes quiet for this long. */
 	private static final long STALE_NANOS = 6_000_000_000L;
 
-	private final String filter;
+	private volatile String filter;
+	private volatile boolean restartRequested;
 	private final Path configDir;
 	private volatile NowPlaying latest;
 	private volatile long latestReceivedNanos;
@@ -36,8 +37,26 @@ public final class WindowsMediaSource implements AutoCloseable {
 	private Thread thread;
 
 	public WindowsMediaSource(String filter, Path configDir) {
-		this.filter = filter == null || filter.isBlank() ? "spotify" : filter.strip();
+		this.filter = clean(filter);
 		this.configDir = configDir;
+	}
+
+	private static String clean(String filter) {
+		return filter == null || filter.isBlank() ? "spotify" : filter.strip();
+	}
+
+	/** Which app is being read ("spotify" or "*"). */
+	public String filter() {
+		return filter;
+	}
+
+	/** Restart the reader right away, optionally switching which app it reads. */
+	public void restart(String newFilter) {
+		filter = clean(newFilter);
+		restartRequested = true;
+		latest = null;
+		Process p = process;
+		if (p != null) p.destroy();
 	}
 
 	public static boolean isSupported() {
@@ -84,6 +103,12 @@ public final class WindowsMediaSource implements AutoCloseable {
 
 			latest = null;
 			if (!running) return;
+
+			if (restartRequested) { // asked for by the settings menu: start again immediately
+				restartRequested = false;
+				backoffMs = 2_000;
+				continue;
+			}
 
 			// Ran fine for a while → it just stopped; restart quickly. Otherwise back off.
 			if (System.nanoTime() - started > 60_000_000_000L) backoffMs = 2_000;

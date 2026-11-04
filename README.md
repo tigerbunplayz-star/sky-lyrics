@@ -32,7 +32,7 @@ Rebind them in Options → Controls → Key Binds → Sky Lyrics.
 
 ## Settings
 
-Press `O` in game for the settings menu: toggles, sliders for size, distance, height, spread, animation speed and fade timing, plus font choice. The **Colors** tab switches between **Original** (the colourful palettes, the default) and **Custom**, where you pick any colour with a colour picker and can fade the letters into a second colour. Changes show live on the words around you (sample words appear if nothing is playing). Save keeps them, Cancel or Esc undoes them.
+Press `O` in game for the settings menu: toggles, sliders for size, distance, height, spread, animation speed and fade timing, plus font choice. The **Colors** tab switches between **Original** (the colourful palettes, the default) and **Custom**, where you pick any colour with a colour picker and can fade the letters into a second colour. Changes show live on the words around you (sample words appear if nothing is playing). Save keeps them, Cancel or Esc undoes them. **Restart** saves, restarts the Spotify reader and downloads the current song's lyrics again: handy after switching which app to read, or if lyrics seem stuck. No game restart is ever needed.
 
 Everything is also in `.minecraft/config/skylyrics.json` (created on first launch) if you prefer editing the file; restart the game after editing it.
 

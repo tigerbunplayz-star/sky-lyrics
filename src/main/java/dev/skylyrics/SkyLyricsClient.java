@@ -33,6 +33,7 @@ public final class SkyLyricsClient implements ClientModInitializer {
 	private SkyLyricsConfig config;
 	private WindowsMediaSource media;
 	private LyricsEngine engine;
+	private LyricsService lyrics;
 	private SkyLyricsRenderer renderer;
 
 	private KeyMapping toggleKey;
@@ -52,7 +53,7 @@ public final class SkyLyricsClient implements ClientModInitializer {
 				.orElse("dev");
 		LrcLibClient lrclib = new LrcLibClient(version);
 		YtMusicLyricsClient youtube = new YtMusicLyricsClient(config.youtubeRegion());
-		LyricsService lyrics = new LyricsService(lrclib, youtube, () -> config.youtubeMusicLyrics);
+		lyrics = new LyricsService(lrclib, youtube, () -> config.youtubeMusicLyrics);
 		engine = new LyricsEngine(lyrics::fetch);
 		renderer = new SkyLyricsRenderer(() -> config, engine);
 
@@ -77,11 +78,25 @@ public final class SkyLyricsClient implements ClientModInitializer {
 		});
 	}
 
+	/** After Save: apply settings that live outside the renderer (which app to read). */
+	private void applySettings() {
+		if (media != null && !media.filter().equalsIgnoreCase(config.player == null ? "spotify" : config.player.strip())) {
+			media.restart(config.player);
+		}
+	}
+
+	/** The menu's Restart button: restart the Spotify reader and download the lyrics again. */
+	private void restartServices() {
+		lyrics.clearCache();
+		if (media != null) media.restart(config.player);
+		else engine.refetch();
+	}
+
 	private void tick(Minecraft client) {
 		engine.update(media != null ? media.latest() : null, System.nanoTime());
 
 		while (menuKey.consumeClick()) {
-			client.setScreenAndShow(new SkyLyricsScreen(config, renderer, version));
+			client.setScreenAndShow(new SkyLyricsScreen(config, renderer, version, this::applySettings, this::restartServices));
 		}
 
 		while (toggleKey.consumeClick()) {

@@ -35,6 +35,11 @@ public final class LyricsService {
 		this.useYoutube = useYoutube;
 	}
 
+	/** Forget every downloaded result so the next lookups ask the sources again. */
+	public void clearCache() {
+		cache.clear();
+	}
+
 	public CompletableFuture<LyricsResult> fetch(NowPlaying np) {
 		String key = np.trackKey();
 		LyricsResult cached = cache.get(key);

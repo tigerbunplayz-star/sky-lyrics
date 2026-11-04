@@ -76,8 +76,18 @@ public final class SkyLyricsScreen extends Screen {
 	// Layout, recomputed every frame.
 	private int px, py, pw, ph;
 
-	public SkyLyricsScreen(SkyLyricsConfig config, SkyLyricsRenderer renderer, String version) {
+	private final Runnable onApply;
+	private final Runnable onRestart;
+
+	/**
+	 * @param onApply   run after Save (applies settings outside the renderer, e.g. which app to read)
+	 * @param onRestart run by the Restart button (restarts the Spotify reader and re-downloads lyrics)
+	 */
+	public SkyLyricsScreen(SkyLyricsConfig config, SkyLyricsRenderer renderer, String version,
+			Runnable onApply, Runnable onRestart) {
 		super(Component.literal("Sky Lyrics settings"));
+		this.onApply = onApply;
+		this.onRestart = onRestart;
 		this.config = config;
 		this.original = config.copy();
 		this.renderer = renderer;
@@ -205,9 +215,16 @@ public final class SkyLyricsScreen extends Screen {
 		int left = contentLeft(), right = contentRight();
 
 		Entry hovered = entryAt(mx, my);
+		String hint = hovered != null ? hovered.help() : t.description();
+		boolean hinting = hovered != null;
+
+		if (inside(mx, my, restartBtn())) {
+			hint = "Save, restart the Spotify reader and download the lyrics again";
+			hinting = true;
+		}
+
 		g.text(font, t.name(), left, py + 10, TEXT, true);
-		g.text(font, font.plainSubstrByWidth(hovered != null ? hovered.help() : t.description(), right - left),
-				left, py + 22, hovered != null ? 0xFFB9B3E6 : TEXT_DIM, false);
+		g.text(font, font.plainSubstrByWidth(hint, right - left), left, py + 22, hinting ? 0xFFB9B3E6 : TEXT_DIM, false);
 		g.fill(left, listTop() - 3, right, listTop() - 2, PANEL_EDGE);
 
 		int top = listTop(), bottom = listBottom();
@@ -534,6 +551,25 @@ public final class SkyLyricsScreen extends Screen {
 		return new int[] {contentRight() - 66, y, contentRight(), y + 18};
 	}
 
+	private int[] restartBtn() {
+		int[] c = cancelBtn();
+		int w = font.width("\u27F3 Restart") + 14;
+		return new int[] {c[0] - 6 - w, c[1], c[0] - 6, c[3]};
+	}
+
+	/** Settings whose effect needs the reader restarted (applied by Save or Restart). */
+	private boolean restartPending() {
+		String now = config.player == null ? "" : config.player.strip();
+		String was = original.player == null ? "" : original.player.strip();
+		return !now.equalsIgnoreCase(was);
+	}
+
+	private void save() {
+		saved = true;
+		config.save();
+		onApply.run();
+	}
+
 	private void drawFooter(GuiGraphicsExtractor g, int mx, int my) {
 		int left = contentLeft(), right = contentRight();
 		g.fill(px + SIDEBAR_W + 1, py + ph - FOOTER_H, px + pw, py + ph - FOOTER_H + 1, PANEL_EDGE);
@@ -546,6 +582,18 @@ public final class SkyLyricsScreen extends Screen {
 		boolean ch = inside(mx, my, c);
 		g.fill(c[0], c[1], c[2], c[3], ch ? 0xFF332E5E : 0xFF26224A);
 		g.text(font, "Cancel", c[0] + (c[2] - c[0] - font.width("Cancel")) / 2, c[1] + 5, ch ? TEXT : 0xFFCFCAF2, false);
+
+		int[] rs = restartBtn();
+		boolean rsh = inside(mx, my, rs);
+		boolean pending = restartPending();
+		g.fill(rs[0], rs[1], rs[2], rs[3], rsh ? 0xFF332E5E : 0xFF26224A);
+		if (pending) {
+			float pulse = 0.5f + 0.5f * (float) Math.sin(System.nanoTime() / 2.5e8);
+			hGradient(g, rs[0], rs[3] - 2, rs[2], rs[3], PINK, CYAN);
+			g.fill(rs[0], rs[1], rs[2], rs[1] + 1, 0xFF000000 | Colors.mix(VIOLET, 0xFFFFFF, pulse * 0.5f));
+		}
+		String rl = "\u27F3 Restart";
+		g.text(font, rl, rs[0] + (rs[2] - rs[0] - font.width(rl)) / 2, rs[1] + 5, rsh || pending ? TEXT : 0xFFCFCAF2, false);
 
 		int[] s = saveBtn();
 		boolean sh = inside(mx, my, s);
@@ -591,9 +639,16 @@ public final class SkyLyricsScreen extends Screen {
 		}
 
 		if (inside(mx, my, saveBtn())) {
-			saved = true;
-			config.save();
-			renderer.showNotice("Settings saved");
+			save();
+			renderer.showNotice(restartPending() ? "Settings saved \u2013 reader restarted" : "Settings saved");
+			onClose();
+			return true;
+		}
+
+		if (inside(mx, my, restartBtn())) {
+			save();
+			onRestart.run();
+			renderer.showNotice("Restarting Sky Lyrics\u2026");
 			onClose();
 			return true;
 		}
@@ -669,8 +724,7 @@ public final class SkyLyricsScreen extends Screen {
 	@Override
 	public boolean keyPressed(KeyEvent event) {
 		if (event.key() == GLFW.GLFW_KEY_ENTER || event.key() == GLFW.GLFW_KEY_KP_ENTER) {
-			saved = true;
-			config.save();
+			save();
 			renderer.showNotice("Settings saved");
 			onClose();
 			return true;

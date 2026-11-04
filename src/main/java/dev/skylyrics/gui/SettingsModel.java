@@ -143,7 +143,7 @@ public final class SettingsModel {
 								c -> c.youtubeMusicLyrics, (c, v) -> c.youtubeMusicLyrics = v),
 						new Toggle("Guess timing of plain lyrics", "Show untimed lyrics with estimated timing (fix with the sync key)",
 								c -> c.estimateUnsyncedLyrics, (c, v) -> c.estimateUnsyncedLyrics = v),
-						new Choice("Read music from", "Spotify only, or any app playing music (applies after a restart)",
+						new Choice("Read music from", "Spotify only, or any app playing music (applies when you press Save)",
 								List.of("Spotify", "Any player"),
 								c -> indexOf(PLAYERS, c.player == null ? "spotify" : c.player.strip().toLowerCase(Locale.ROOT)),
 								(c, i) -> c.player = PLAYERS.get(i)))),
