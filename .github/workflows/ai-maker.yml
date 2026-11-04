@@ -1,0 +1,109 @@
+# End-to-end test of the AI lyric maker on Windows: installs it exactly like the mod does,
+# builds a test "song" (two spoken sentences over a synthetic backing track), and checks
+# that the vocals are separated, the words recognised and the timings in the right place.
+name: ai-maker
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/main/resources/skylyrics/ai/**'
+      - '.github/workflows/ai-maker.yml'
+  workflow_dispatch:
+
+jobs:
+  ai-maker:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v6
+
+      - name: install the AI (like the mod's Install button)
+        shell: powershell
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'ai'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Copy-Item src/main/resources/skylyrics/ai/lyric_maker.py $dir
+          $t0 = Get-Date
+          powershell -NoProfile -ExecutionPolicy Bypass -File src/main/resources/skylyrics/ai/setup_ai.ps1 -Dir $dir 2> setup-err.txt | Tee-Object setup-out.txt
+          $mins = [math]::Round(((Get-Date) - $t0).TotalMinutes, 1)
+          $size = [math]::Round(((Get-ChildItem $dir -Recurse -File | Measure-Object Length -Sum).Sum) / 1GB, 2)
+          "setup took $mins min, folder is $size GB" | Tee-Object -Append setup-out.txt
+          if (-not (Test-Path (Join-Path $dir 'ready.txt'))) {
+            $tail = (Get-Content setup-err.txt -Tail 25) -join '%0A'
+            Write-Output "::error title=AI setup failed::$((Get-Content setup-out.txt) -join '%0A')%0A--- stderr%0A$tail"
+            exit 1
+          }
+          Write-Output "::notice title=AI setup::$((Get-Content setup-out.txt) -join '%0A')"
+
+      - name: make a test song (spoken sentences over a backing track)
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Speech
+          $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+          "voices: " + (($s.GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name }) -join ', ')
+          $s.Rate = -1
+          $s.SetOutputToWaveFile("$pwd\line1.wav"); $s.Speak('the quick brown fox jumps over the lazy dog')
+          $s.SetOutputToWaveFile("$pwd\line2.wav"); $s.Speak('sky lyrics makes colourful words appear around you')
+          $s.SetOutputToNull()
+          $py = Join-Path $env:RUNNER_TEMP 'ai\python\python.exe'
+          @'
+          import numpy as np, soundfile as sf
+          sr = 44100
+          song = np.zeros(int(sr * 20), dtype=np.float32)
+          t = np.arange(len(song)) / sr
+          for f in (220.0, 277.2, 329.6):                      # a held A major chord
+              song += 0.06 * np.sin(2 * np.pi * f * t)
+          for beat in np.arange(0, 20, 0.5):                   # a kick drum every half second
+              i = int(beat * sr); n = int(0.15 * sr)
+              k = np.sin(2 * np.pi * 55 * np.arange(n) / sr) * np.exp(-np.arange(n) / (0.03 * sr))
+              song[i:i + n] += 0.35 * k[: len(song) - i]
+          def place(path, at):
+              v, vsr = sf.read(path, dtype="float32")
+              if v.ndim > 1: v = v.mean(1)
+              if vsr != sr: v = np.interp(np.arange(0, len(v), vsr / sr), np.arange(len(v)), v).astype(np.float32)
+              i = int(at * sr); song[i:i + len(v)] += 0.9 * v[: len(song) - i]
+          place("line1.wav", 3.0)
+          place("line2.wav", 11.0)
+          song /= max(1.0, np.abs(song).max())
+          sf.write("test-song.wav", np.stack([song, song], 1), sr)
+          print("test song written")
+          '@ | Set-Content mix.py -Encoding ASCII
+          & $py mix.py
+
+      - name: run the AI lyric maker on it
+        shell: powershell
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'ai'
+          $py = Join-Path $dir 'python\python.exe'
+          $t0 = Get-Date
+          & $py (Join-Path $dir 'lyric_maker.py') --process test-song.wav --out out.lrc --models (Join-Path $dir 'models') --lang en --title 'Test Song' --artist 'Sky Lyrics' 2> maker-err.txt | Tee-Object maker-out.txt
+          $secs = [math]::Round(((Get-Date) - $t0).TotalSeconds)
+          "took $secs s for a 20 s song" | Tee-Object -Append maker-out.txt
+          if (-not (Test-Path out.lrc)) {
+            $tail = (Get-Content maker-err.txt -Tail 25) -join '%0A'
+            Write-Output "::error title=AI maker failed::$((Get-Content maker-out.txt -Tail 10) -join '%0A')%0A--- stderr%0A$tail"
+            exit 1
+          }
+          Write-Output "::notice title=AI maker output::$((Get-Content out.lrc) -join '%0A')%0A%0A$((Get-Content maker-out.txt -Tail 3) -join '%0A')"
+
+      - name: check words and timings
+        shell: powershell
+        run: |
+          $lines = Get-Content out.lrc | Where-Object { $_ -match '^\[(\d+):(\d+\.\d+)\](.+)$' } | ForEach-Object {
+            if ($_ -match '^\[(\d+):(\d+\.\d+)\](.+)$') { [pscustomobject]@{ t = [int]$Matches[1] * 60 + [double]$Matches[2]; text = $Matches[3].ToLower() } }
+          }
+          $all = ($lines | ForEach-Object { $_.text }) -join ' '
+          $want1 = 'the quick brown fox jumps over the lazy dog'.Split(' ')
+          $want2 = 'sky lyrics makes colourful words appear around you'.Split(' ')
+          $hit1 = ($want1 | Where-Object { $all -match "\b$_\b" }).Count / $want1.Count
+          $hit2 = ($want2 | Where-Object { $all -match "\b$_\b" }).Count / $want2.Count
+          $first = ($lines | Select-Object -First 1).t
+          $second = ($lines | Where-Object { $_.t -ge 8 } | Select-Object -First 1).t
+          $report = "lines=$($lines.Count) recall1=$([math]::Round($hit1,2)) recall2=$([math]::Round($hit2,2)) firstLineAt=$first secondPartAt=$second"
+          Write-Output "::notice title=AI maker check::$report"
+          if ($lines.Count -lt 2) { throw "too few lines: $report" }
+          if ($hit1 -lt 0.5 -or $hit2 -lt 0.4) { throw "words not recognised well enough: $report" }
+          if ($first -lt 2.0 -or $first -gt 4.5) { throw "first line time is off: $report" }
+          if ($second -lt 10.0 -or $second -gt 13.5) { throw "second sentence time is off: $report" }
+          'all checks passed'
