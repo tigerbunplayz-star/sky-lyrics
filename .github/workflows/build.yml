@@ -27,55 +27,7 @@ jobs:
       - name: make gradle wrapper executable
         run: chmod +x ./gradlew
       - name: build
-        run: |
-          set -o pipefail
-          ./gradlew build --stacktrace 2>&1 | tee build.log
-      - name: probe minecraft signatures
-        if: always()
-        run: |
-          : > probe.txt
-          for jar in $(find ~/.gradle .gradle -type f -name '*.jar' 2>/dev/null | grep -i minecraft); do
-            if unzip -l "$jar" 2>/dev/null | grep -q 'net/minecraft/client/renderer/OrderedSubmitNodeCollector.class'; then
-              echo "== JAR $jar" >> probe.txt
-              unzip -l "$jar" | grep -E 'CameraRenderState|LightCoordsUtil|/Font\$|/Font.class|FormattedCharSequence' >> probe.txt || true
-              for c in net.minecraft.client.renderer.OrderedSubmitNodeCollector net.minecraft.client.renderer.SubmitNodeCollector \
-                       net.minecraft.client.gui.Font 'net.minecraft.client.gui.Font$DisplayMode' com.mojang.blaze3d.vertex.PoseStack \
-                       net.minecraft.util.LightCoordsUtil net.minecraft.network.chat.MutableComponent; do
-                javap -public -cp "$jar" "$c" >> probe.txt 2>&1 || true
-              done
-              javap -public -cp "$jar" net.minecraft.world.entity.Entity 2>&1 | grep -iE 'YRot|XRot' >> probe.txt || true
-              javap -public -cp "$jar" net.minecraft.network.chat.Component 2>&1 | grep -E 'literal|VisualOrder' >> probe.txt || true
-              cls=$(unzip -l "$jar" | grep -oE 'net/minecraft/[A-Za-z/]*CameraRenderState.class' | head -1 | sed 's#/#.#g; s#.class$##')
-              [ -n "$cls" ] && javap -public -cp "$jar" "$cls" >> probe.txt 2>&1 || true
-              echo "== CLASSES" >> probe.txt
-              unzip -l "$jar" | grep -oE 'net/minecraft/client/renderer/[A-Za-z/$]*(SubmitNodeCollection|TextSubmit|NameTag|Camera)[A-Za-z$]*\.class' >> probe.txt || true
-              echo "== submitText impl" >> probe.txt
-              javap -c -p -cp "$jar" net.minecraft.client.renderer.SubmitNodeCollection 2>&1 | sed -n '/submitText(/,/^$/p' | head -60 >> probe.txt || true
-              for c in $(unzip -l "$jar" | grep -oE 'net/minecraft/client/renderer/[A-Za-z/$]*TextSubmit\.class' | sed 's#/#.#g; s#.class$##'); do
-                echo "== $c" >> probe.txt; javap -p -cp "$jar" "$c" >> probe.txt 2>&1 || true
-              done
-              echo "== TextFeatureRenderer.Submit" >> probe.txt
-              javap -p -cp "$jar" 'net.minecraft.client.renderer.feature.TextFeatureRenderer$Submit' >> probe.txt 2>&1 || true
-              echo "== Camera.setRotation" >> probe.txt
-              javap -c -p -cp "$jar" net.minecraft.client.Camera 2>&1 | sed -n '/void setRotation(/,/^$/p' | head -50 >> probe.txt || true
-              for c in $(unzip -l "$jar" | grep -oE 'net/minecraft/client/renderer/[A-Za-z/]*NameTag[A-Za-z]*Renderer\.class' | sed 's#/#.#g; s#.class$##'); do
-                echo "== $c" >> probe.txt; javap -c -p -cp "$jar" "$c" 2>&1 | grep -E 'mulPose|scale|ldc|Method .*(drawInBatch|render)|orientation' | head -40 >> probe.txt || true
-              done
-              break
-            fi
-          done
-      - name: publish logs to ci-logs branch
-        if: always()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          mkdir -p /tmp/ci
-          cp build.log probe.txt /tmp/ci/ 2>/dev/null || true
-          cd /tmp/ci
-          git init -q -b ci-logs
-          git add -A
-          git -c user.name=ci -c user.email=ci@localhost commit -qm "logs for ${GITHUB_SHA}"
-          git push -f -q "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ci-logs
+        run: ./gradlew build --stacktrace
       - name: capture build artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -110,13 +62,3 @@ jobs:
           if ($lines.Count -lt 5) { throw "media reader printed only $($lines.Count) JSON lines" }
           foreach ($l in $lines) { $o = $l | ConvertFrom-Json; if ($null -eq $o.ok) { throw "bad line: $l" } }
           "ok: $($lines.Count) valid lines"
-      - name: publish log
-        if: always()
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          mkdir -p /tmp/ci && cp media-reader.log /tmp/ci/ 2>/dev/null || echo "no log" > /tmp/ci/media-reader.log
-          cd /tmp/ci && git init -q -b ci-logs-windows && git add -A
-          git -c user.name=ci -c user.email=ci@localhost commit -qm "media reader log for ${GITHUB_SHA}"
-          git push -f -q "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ci-logs-windows
