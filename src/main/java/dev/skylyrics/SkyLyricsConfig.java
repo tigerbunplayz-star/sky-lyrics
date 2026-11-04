@@ -59,6 +59,13 @@ public final class SkyLyricsConfig {
 	 * Press ; in game the moment you hear a line start to line them up.
 	 */
 	public boolean estimateUnsyncedLyrics = true;
+	/**
+	 * Also look on YouTube Music when LRCLIB has no synced lyrics. Uses YouTube Music's
+	 * unofficial app interface, so it may stop working if YouTube changes it.
+	 */
+	public boolean youtubeMusicLyrics = true;
+	/** Country for YouTube Music lyrics (they're licensed per country). Empty = your system's country. */
+	public String youtubeRegion = "";
 	/** Settings file format; used to upgrade old files. */
 	public int configVersion = 0;
 
@@ -107,6 +114,12 @@ public final class SkyLyricsConfig {
 		} catch (IOException e) {
 			LOG.warn("[Sky Lyrics] Couldn't save {}: {}", path, e.toString());
 		}
+	}
+
+	public String youtubeRegion() {
+		if (youtubeRegion != null && youtubeRegion.strip().length() == 2) return youtubeRegion.strip();
+		String c = java.util.Locale.getDefault().getCountry();
+		return c == null || c.length() != 2 ? "US" : c;
 	}
 
 	public LyricScene.Settings sceneSettings() {

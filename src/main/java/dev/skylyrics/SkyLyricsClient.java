@@ -19,6 +19,8 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.fabricmc.loader.api.FabricLoader;
 
 import dev.skylyrics.lyrics.LrcLibClient;
+import dev.skylyrics.lyrics.LyricsService;
+import dev.skylyrics.lyrics.YtMusicLyricsClient;
 import dev.skylyrics.media.WindowsMediaSource;
 import dev.skylyrics.render.SkyLyricsRenderer;
 
@@ -46,7 +48,9 @@ public final class SkyLyricsClient implements ClientModInitializer {
 				.map(c -> c.getMetadata().getVersion().getFriendlyString())
 				.orElse("dev");
 		LrcLibClient lrclib = new LrcLibClient(version);
-		engine = new LyricsEngine(lrclib::fetch);
+		YtMusicLyricsClient youtube = new YtMusicLyricsClient(config.youtubeRegion());
+		LyricsService lyrics = new LyricsService(lrclib, youtube, () -> config.youtubeMusicLyrics);
+		engine = new LyricsEngine(lyrics::fetch);
 		renderer = new SkyLyricsRenderer(() -> config, engine);
 
 		if (WindowsMediaSource.isSupported()) {

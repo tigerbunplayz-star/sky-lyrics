@@ -14,10 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -39,32 +35,14 @@ public final class LrcLibClient {
 			.connectTimeout(Duration.ofSeconds(8))
 			.followRedirects(HttpClient.Redirect.NORMAL)
 			.build();
-	private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
-		Thread t = new Thread(r, "SkyLyrics lyrics lookup");
-		t.setDaemon(true);
-		return t;
-	});
-	private final Map<String, LyricsResult> cache = new ConcurrentHashMap<>();
 	private final String userAgent;
 
 	public LrcLibClient(String modVersion) {
 		this.userAgent = "SkyLyrics/" + modVersion + " (https://github.com/tigerbunplayz-star/sky-lyrics)";
 	}
 
-	public CompletableFuture<LyricsResult> fetch(NowPlaying np) {
-		String key = np.trackKey();
-		LyricsResult cached = cache.get(key);
-		if (cached != null) return CompletableFuture.completedFuture(cached);
-
-		return CompletableFuture.supplyAsync(() -> {
-			LyricsResult result = lookup(np);
-			// Only cache real answers, so a network hiccup can be retried.
-			if (result != null) cache.put(key, result);
-			return result;
-		}, executor);
-	}
-
-	private LyricsResult lookup(NowPlaying np) {
+	/** Blocking lookup. Throws a RuntimeException if LRCLIB can't be reached. */
+	public LyricsResult lookup(NowPlaying np) {
 		String title = np.title();
 		String artist = np.artist();
 		double durationS = np.durationMs() / 1000.0;
