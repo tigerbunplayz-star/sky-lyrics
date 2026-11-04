@@ -1,18 +1,19 @@
 # Sky Lyrics
 
-A Fabric mod for Minecraft **26.2** that shows the lyrics of whatever you're playing in Spotify, synced line by line, as giant glowing text floating in the sky.
+A Fabric mod for Minecraft **26.2** that shows the lyrics of whatever you're playing in Spotify as big, colourful 3D words popping up around you in the world, synced to the music.
 
-- Reads the song straight from Windows' media controls — **no Spotify login, developer app or Premium needed**. Just have the Spotify desktop app playing.
-- Synced lyrics come from [LRCLIB](https://lrclib.net), a free lyrics database.
-- Lines fade and slide in, light up left-to-right as they're sung (karaoke), with the next line shown faded underneath.
-- The text drifts around to stay in front of you, high above the horizon, and glows at night.
+- Reads the song straight from Windows' media controls: **no Spotify login, developer app or Premium needed**. Just have the Spotify desktop app playing.
+- Synced lyrics come from [LRCLIB](https://lrclib.net), a free lyrics database. Hungarian and other accented songs work, including when the database spells them without accents.
+- Each line is cut into short word groups that pop up as they're sung, scattered left, right, near and far, in chunky 3D block letters.
+- Every group gets its own bright colour with a soft gradient and shimmer, and the words gently bob and sway.
+- Walk around the words to see their 3D sides. They glow at night.
 - Client-side only: works in singleplayer and on any server.
 
 ## Install
 
-1. Install [Fabric Loader](https://fabricmc.net/use/installer/) for Minecraft 26.2.
+1. Install [Fabric Loader](https://fabricmc.net/use/installer/) for Minecraft 26.2 (0.19 or newer).
 2. Put [Fabric API](https://modrinth.com/mod/fabric-api) (for 26.2) and `sky-lyrics-x.y.z.jar` in your `.minecraft/mods` folder.
-3. Start Minecraft with the Fabric profile, play a song in Spotify, and look up.
+3. Start Minecraft with the Fabric profile and play a song in Spotify.
 
 ## Controls
 
@@ -30,26 +31,27 @@ Edit `.minecraft/config/skylyrics.json` (created on first launch), then restart 
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| `distance` | `48` | How far away the text floats (blocks). Lower it with very small render distances. |
+| `font` | `"block"` | `"block"` chunky 3D letters, `"lobster"` fancy script, `"minecraft"` the game's font |
+| `uppercase` | `true` | Write the lyrics in capitals |
 | `size` | `1.0` | Text size multiplier |
-| `elevation` | `28` | Degrees above the horizon |
-| `followView` | `true` | Text swings around to stay in front of you; `false` keeps it fixed at `fixedYaw` |
-| `followSpeed` | `1.6` | How fast it catches up when you turn |
-| `fixedYaw` | `180` | Direction when not following: 0 south, 90 west, 180 north, 270 east |
-| `showNextLine` | `true` | Show the upcoming line, faded |
-| `karaoke` | `true` | Light up each line as it's sung |
-| `lyricColor` / `unsungColor` / `titleColor` / `dimColor` | | Hex colours |
-| `opacity` | `1.0` | Overall transparency |
-| `shadow` / `background` | `true` / `false` | Text shadow, dark box behind text |
+| `depth` | `1.0` | 3D thickness of the letters (`0` = flat) |
+| `colors` | 6 bright colours | Hex colours the word groups cycle through |
+| `shimmer` | `true` | Gently shift colours over time |
+| `bob` | `true` | Words bob and sway a little |
+| `spread` | `38` | How far left/right of your view words appear (degrees) |
+| `distanceMin` / `distanceMax` | `13` / `22` | How far away words appear (blocks) |
+| `heightMin` / `heightMax` | `-0.5` / `4.5` | Height above your eyes (blocks). Raise both (e.g. `12` / `20`) to put the lyrics up in the sky |
+| `holdMs` | `2200` | How long a line stays after the next one starts |
+| `maxWordsPerGroup` / `maxCharsPerGroup` | `3` / `12` | How lines are cut into groups |
 | `offsetMs` | `0` | Timing shift (also set with `[` / `]`) |
 | `player` | `"spotify"` | Which app to read; `"*"` uses whatever is playing (browsers, other players) |
-| `maxLineWidth` | `150` | Wrap width in font pixels |
 
 ## Notes
 
 - Windows 10/11 only (it uses the system media controls through a small PowerShell helper that the mod starts and stops automatically).
-- If a song shows "no synced lyrics found", LRCLIB doesn't have timed lyrics for it yet — you can add them at lrclib.net.
+- If a song shows "no synced lyrics found", LRCLIB doesn't have timed lyrics for it yet. You can add them at lrclib.net.
+- Fonts: Archivo Black and Lobster, both under the SIL Open Font License (see `licenses/`).
 
 ## Building
 
-`gradlew build` (needs JDK 25). The jar ends up in `build/libs/`. GitHub Actions builds every push.
+`gradlew build` (needs JDK 25). The jar ends up in `build/libs/`. GitHub Actions builds and tests every push.

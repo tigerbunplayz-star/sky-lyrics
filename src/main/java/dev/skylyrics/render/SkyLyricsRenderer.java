@@ -36,7 +36,7 @@ import dev.skylyrics.render.LyricScene.Placement;
  */
 public final class SkyLyricsRenderer {
 	/** Blocks per font pixel for a group 18 blocks away (keeps size similar at any distance). */
-	private static final float BASE_SCALE = 0.2f;
+	private static final float BASE_SCALE = 0.17f;
 	private static final float REFERENCE_DISTANCE = 18f;
 	/** Slices stacked behind the front face to make the letters look solid. */
 	private static final int DEPTH_LAYERS = 12;
@@ -128,20 +128,6 @@ public final class SkyLyricsRenderer {
 		float sway = cfg.bob ? (float) Math.sin(timeS * 0.9 + p.phase() * 1.3) * 2.5f : 0f;
 		float lift = -settle * 1.6f - exit * 1.4f + bob;
 
-		double yawRad = Math.toRadians(a.yaw() + p.yawOffset());
-		double wx = a.x() - Math.sin(yawRad) * p.distance();
-		double wy = a.y() + p.height() + lift;
-		double wz = a.z() + Math.cos(yawRad) * p.distance();
-
-		float faceYaw = a.yaw() + p.faceTurn() + settle * 40f + sway;
-		float s = BASE_SCALE * p.size() * (float) Math.max(0.1, cfg.size) * (p.distance() / REFERENCE_DISTANCE) * scaleAnim;
-
-		poseStack.pushPose();
-		poseStack.translate(wx - cam.x, wy - cam.y, wz - cam.z);
-		poseStack.mulPose(new Quaternionf().rotationYXZ((float) Math.PI - (float) Math.toRadians(faceYaw), 0f, 0f));
-		poseStack.mulPose(new Quaternionf().rotationZ((float) Math.toRadians(p.roll())));
-		poseStack.scale(s, -s, s);
-
 		boolean note = c.kind() == Kind.NOTE;
 		FontDescription fontDesc = note ? null : fontFor(cfg);
 		int base = note ? 0xFFFFFF : palette[Math.floorMod(c.color(), palette.length)];
@@ -149,7 +135,29 @@ public final class SkyLyricsRenderer {
 
 		FormattedCharSequence front = note ? plain(c.text(), null, 0xEEF2F8).getVisualOrderText()
 				: gradient(c.text(), fontDesc, base, cfg.shimmer ? timeS : 0, p.phase(), flash).getVisualOrderText();
-		float x = -font.width(front) / 2f;
+		int widthPx = font.width(front);
+		float fullScale = BASE_SCALE * p.size() * (float) Math.max(0.1, cfg.size) * (p.distance() / REFERENCE_DISTANCE);
+
+		// Keep the whole group on screen: wide groups stay closer to the centre of view.
+		double halfWidthDeg = Math.toDegrees(Math.atan(widthPx * fullScale / 2.0 / p.distance()));
+		double maxYaw = Math.max(0, 46 - halfWidthDeg);
+		double yawOffset = Math.max(-maxYaw, Math.min(maxYaw, p.yawOffset()));
+
+		double yawRad = Math.toRadians(a.yaw() + yawOffset);
+		double wx = a.x() - Math.sin(yawRad) * p.distance();
+		double wy = a.y() + p.height() + lift;
+		double wz = a.z() + Math.cos(yawRad) * p.distance();
+
+		float faceYaw = a.yaw() + p.faceTurn() + settle * 40f + sway;
+		float s = fullScale * scaleAnim;
+
+		poseStack.pushPose();
+		poseStack.translate(wx - cam.x, wy - cam.y, wz - cam.z);
+		poseStack.mulPose(new Quaternionf().rotationYXZ((float) Math.PI - (float) Math.toRadians(faceYaw), 0f, 0f));
+		poseStack.mulPose(new Quaternionf().rotationZ((float) Math.toRadians(p.roll())));
+		poseStack.scale(s, -s, s);
+
+		float x = -widthPx / 2f;
 		float y = -font.lineHeight / 2f;
 
 		float depthPx = (float) Math.max(0, cfg.depth) * DEPTH_PX;
