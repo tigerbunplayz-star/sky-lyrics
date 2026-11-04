@@ -19,7 +19,11 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.fabricmc.loader.api.FabricLoader;
 
 import dev.skylyrics.gui.SkyLyricsScreen;
+import dev.skylyrics.gui.SettingsModel;
+import dev.skylyrics.lyrics.LocalLyrics;
 import dev.skylyrics.lyrics.LrcLibClient;
+import dev.skylyrics.lyrics.Lyrics;
+import dev.skylyrics.media.NowPlaying;
 import dev.skylyrics.lyrics.LyricsService;
 import dev.skylyrics.lyrics.YtMusicLyricsClient;
 import dev.skylyrics.media.WindowsMediaSource;
@@ -34,6 +38,7 @@ public final class SkyLyricsClient implements ClientModInitializer {
 	private WindowsMediaSource media;
 	private LyricsEngine engine;
 	private LyricsService lyrics;
+	private LocalLyrics localLyrics;
 	private SkyLyricsRenderer renderer;
 
 	private KeyMapping toggleKey;
@@ -53,7 +58,8 @@ public final class SkyLyricsClient implements ClientModInitializer {
 				.orElse("dev");
 		LrcLibClient lrclib = new LrcLibClient(version);
 		YtMusicLyricsClient youtube = new YtMusicLyricsClient(config.youtubeRegion());
-		lyrics = new LyricsService(lrclib, youtube, () -> config.youtubeMusicLyrics);
+		localLyrics = new LocalLyrics(configDir.resolve("skylyrics").resolve("lyrics"));
+		lyrics = new LyricsService(localLyrics, lrclib, youtube, () -> config.youtubeMusicLyrics);
 		engine = new LyricsEngine(lyrics::fetch);
 		renderer = new SkyLyricsRenderer(() -> config, engine);
 
@@ -78,6 +84,63 @@ public final class SkyLyricsClient implements ClientModInitializer {
 		});
 	}
 
+	private SettingsModel.MenuActions menuActions() {
+		return new SettingsModel.MenuActions() {
+			public String currentFileName() {
+				NowPlaying np = engine.currentTrack();
+				return np == null ? null : LocalLyrics.fileName(np.artist(), np.title());
+			}
+
+			public void openLyricsFolder() {
+				try {
+					if (WindowsMediaSource.isSupported()) {
+						new ProcessBuilder("explorer.exe", localLyrics.dir().toAbsolutePath().toString()).start();
+					}
+				} catch (java.io.IOException e) {
+					LOG.warn("[Sky Lyrics] Couldn't open the lyrics folder: {}", e.toString());
+				}
+			}
+
+			public boolean canRecord() {
+				return engine.canRecord();
+			}
+
+			public boolean isRecording() {
+				return engine.isRecording();
+			}
+
+			public void toggleRecording() {
+				if (engine.isRecording()) {
+					finishRecording();
+				} else if (engine.startRecording()) {
+					renderer.showNotice("Recording: tap ; at the start of each line", 3_000_000_000L);
+				} else {
+					renderer.showNotice("Play a song with lyrics first");
+				}
+			}
+		};
+	}
+
+	/** Stop the recorder and save the timed lines to the lyrics folder. */
+	private void finishRecording() {
+		NowPlaying np = engine.currentTrack();
+		int total = engine.recordTotal();
+		Lyrics timed = engine.stopRecording();
+
+		if (np == null || timed == null || timed.isEmpty()) {
+			renderer.showNotice("Recording stopped (nothing tapped)");
+			return;
+		}
+
+		try {
+			java.nio.file.Path file = localLyrics.save(np, timed);
+			renderer.showNotice("Saved " + timed.size() + "/" + total + " timed lines: " + file.getFileName(), 4_000_000_000L);
+		} catch (java.io.IOException e) {
+			LOG.warn("[Sky Lyrics] Couldn't save recorded lyrics: {}", e.toString());
+			renderer.showNotice("Couldn't save the lyrics file");
+		}
+	}
+
 	/** After Save: apply settings that live outside the renderer (which app to read). */
 	private void applySettings() {
 		if (media != null && !media.filter().equalsIgnoreCase(config.player == null ? "spotify" : config.player.strip())) {
@@ -96,7 +159,7 @@ public final class SkyLyricsClient implements ClientModInitializer {
 		engine.update(media != null ? media.latest() : null, System.nanoTime());
 
 		while (menuKey.consumeClick()) {
-			client.setScreenAndShow(new SkyLyricsScreen(config, renderer, version, this::applySettings, this::restartServices));
+			client.setScreenAndShow(new SkyLyricsScreen(config, renderer, version, this::applySettings, this::restartServices, menuActions()));
 		}
 
 		while (toggleKey.consumeClick()) {
@@ -118,9 +181,21 @@ public final class SkyLyricsClient implements ClientModInitializer {
 		}
 
 		while (syncKey.consumeClick()) {
+			if (engine.isRecording()) {
+				if (engine.recordTap(System.nanoTime())) finishRecording();
+				continue;
+			}
+
 			Long shift = engine.syncLineStartsNow(System.nanoTime(), config.offsetMs);
 			renderer.showNotice(shift == null ? "No lyrics to sync"
 					: shift == 0 ? "Lyrics synced" : "Lyrics synced (" + (shift > 0 ? "+" : "") + shift + " ms)");
+		}
+
+		if (engine.isRecording()) {
+			String next = engine.nextRecordLine();
+			if (next != null && next.length() > 40) next = next.substring(0, 39) + "\u2026";
+			renderer.showNotice("\u25CF REC " + engine.recordedCount() + "/" + engine.recordTotal()
+					+ "  tap ; for: " + (next == null ? "" : next), 300_000_000L);
 		}
 
 		if (offsetChanged) {

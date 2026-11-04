@@ -30,6 +30,10 @@ On a Hungarian keyboard these keys are `ő`, `ú` and `é`.
 
 Rebind them in Options → Controls → Key Binds → Sky Lyrics.
 
+## Your own lyrics
+
+Put `.lrc` (timed) or `.txt` (plain) files in `.minecraft/config/skylyrics/lyrics/`, named `Artist - Title.lrc`. They always win over downloaded lyrics. The menu's **My lyrics** tab shows the exact file name for the song that's playing, opens the folder, and has a **timing recorder**: start it, tap `;` at the start of every line while the song plays, and a timed `.lrc` is saved for you. A `README.txt` in the folder explains the format.
+
 ## Settings
 
 Press `O` in game for the settings menu: toggles, sliders for size, distance, height, spread, animation speed and fade timing, plus font choice. The **Colors** tab switches between **Original** (the colourful palettes, the default) and **Custom**, where you pick any colour with a colour picker and can fade the letters into a second colour. Changes show live on the words around you (sample words appear if nothing is playing). Save keeps them, Cancel or Esc undoes them. **Restart** saves, restarts the Spotify reader and downloads the current song's lyrics again: handy after switching which app to read, or if lyrics seem stuck. No game restart is ever needed.

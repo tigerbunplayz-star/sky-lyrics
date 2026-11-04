@@ -12,7 +12,7 @@ import dev.skylyrics.SkyLyricsConfig;
 
 /** What the settings menu shows: tabs of toggles, sliders and choices bound to config fields. */
 public final class SettingsModel {
-	public sealed interface Entry permits Toggle, Slider, Choice, Picker, Preview {
+	public sealed interface Entry permits Toggle, Slider, Choice, Picker, Preview, Info, Action {
 		String label();
 
 		String help();
@@ -89,6 +89,34 @@ public final class SettingsModel {
 		}
 	}
 
+	/** Read-only line of text, e.g. the file name for the current song. */
+	public record Info(String label, String help, java.util.function.Supplier<String> value) implements Entry {
+		public void reset(SkyLyricsConfig cfg, SkyLyricsConfig defaults) {
+		}
+	}
+
+	/** A button. {@code closesMenu}: save settings and close the menu after running it. */
+	public record Action(String label, String help, java.util.function.Supplier<String> button,
+			java.util.function.BooleanSupplier enabled, Runnable run, boolean closesMenu) implements Entry {
+		public void reset(SkyLyricsConfig cfg, SkyLyricsConfig defaults) {
+		}
+	}
+
+	/** What the menu can ask the mod to do (implemented by the client). */
+	public interface MenuActions {
+		/** "Artist - Title.lrc" for the song playing now, or null. */
+		String currentFileName();
+
+		void openLyricsFolder();
+
+		boolean canRecord();
+
+		boolean isRecording();
+
+		/** Start recording, or stop and save. */
+		void toggleRecording();
+	}
+
 	/** A sample word drawn with the current colours. */
 	public record Preview(String label, String help) implements Entry {
 		public int height() {
@@ -134,7 +162,7 @@ public final class SettingsModel {
 	private SettingsModel() {
 	}
 
-	public static List<Tab> tabs() {
+	public static List<Tab> tabs(MenuActions actions) {
 		return List.of(
 				new Tab("Lyrics", "♪", "What shows up and where the lyrics come from", List.of(
 						new Toggle("Show lyrics", "Turn the whole mod on or off (also the K key)",
@@ -147,6 +175,7 @@ public final class SettingsModel {
 								List.of("Spotify", "Any player"),
 								c -> indexOf(PLAYERS, c.player == null ? "spotify" : c.player.strip().toLowerCase(Locale.ROOT)),
 								(c, i) -> c.player = PLAYERS.get(i)))),
+				myLyricsTab(actions),
 				new Tab("Look", "✦", "Font, size and style of the words", List.of(
 						new Choice("Font", "Chunky block letters, a fancy script, or the Minecraft font",
 								List.of("Block", "Script", "Minecraft"),
@@ -180,6 +209,20 @@ public final class SettingsModel {
 						new Slider("Timing offset", "Shift all lyrics earlier (+) or later (-); also the [ and ] keys", -3000, 3000, 50,
 								c -> c.offsetMs, (c, v) -> c.offsetMs = Math.round(v),
 								v -> (v > 0 ? "+" : "") + Math.round(v) + " ms"))));
+	}
+
+	private static Tab myLyricsTab(MenuActions a) {
+		return new Tab("My lyrics", "\u270E", "Your own lyrics files, and a recorder for timings", List.of(
+				new Info("File name for this song", "Save your lyrics with this name in the folder (.lrc timed, .txt plain)",
+						() -> {
+							String f = a.currentFileName();
+							return f == null ? "play a song first" : f;
+						}),
+				new Action("Lyrics folder", "Opens the folder (README.txt inside explains the format)",
+						() -> "Open", () -> true, a::openLyricsFolder, false),
+				new Action("Record timing", "Tap the sync key (;) at the start of every line; saves an .lrc file",
+						() -> a.isRecording() ? "Stop & save" : "Start", () -> a.isRecording() || a.canRecord(),
+						a::toggleRecording, true)));
 	}
 
 	private static Tab colorsTab() {

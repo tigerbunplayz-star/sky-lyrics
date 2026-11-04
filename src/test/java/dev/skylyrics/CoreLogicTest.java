@@ -287,6 +287,31 @@ class CoreLogicTest {
 		assertEquals(7, dev.skylyrics.render.ColorScheme.parse("nope", 7));
 	}
 
+	@Test
+	void recorderTimesEachLineOnTap() {
+		Lyrics plain = dev.skylyrics.lyrics.PlainLyricsEstimator.estimate("first made up line\nsecond one\n\nthird after a break", 120_000);
+		LyricsEngine e = new LyricsEngine(np -> CompletableFuture.completedFuture(new LyricsResult(LyricsResult.Kind.ESTIMATED, plain)));
+		e.update(new NowPlaying("Song", "Artist", "", 10_000, 120_000, true, 0), 0);
+
+		assertTrue(e.canRecord());
+		assertTrue(e.startRecording());
+		assertEquals("first made up line", e.nextRecordLine());
+		assertEquals(3, e.recordTotal());
+
+		assertFalse(e.recordTap(2_000 * MS)); // song at 12.0 s
+		assertFalse(e.recordTap(5_000 * MS)); // 15.0 s
+		assertEquals("third after a break", e.nextRecordLine());
+		assertTrue(e.recordTap(9_000 * MS)); // 19.0 s, last line
+
+		Lyrics timed = e.stopRecording();
+		assertEquals(3, timed.size());
+		assertEquals(12_000 - LyricsEngine.REACTION_MS, timed.get(0).timeMs());
+		assertEquals(15_000 - LyricsEngine.REACTION_MS, timed.get(1).timeMs());
+		assertEquals(19_000 - LyricsEngine.REACTION_MS, timed.get(2).timeMs());
+		assertFalse(e.isRecording());
+		assertEquals(Status.SYNCED, e.snapshot(9_000 * MS, 0).status());
+	}
+
 	private static List<String> texts(List<LyricScene.Chunk> chunks) {
 		return chunks.stream().filter(c -> c.kind() == LyricScene.Kind.LYRIC).map(LyricScene.Chunk::text).toList();
 	}

@@ -31,6 +31,13 @@ public final class LyricsEngine {
 	private volatile long trackOffsetMs;
 	private volatile Lyrics lyrics;
 
+	/** Timing recorder: lines still waiting for a tap, and the lines timed so far. */
+	private volatile java.util.List<String> recordQueue;
+	private final java.util.List<LyricLine> recorded = new java.util.ArrayList<>();
+	private volatile Lyrics recordedLyrics;
+	/** People tap a little after they hear a line start; recorded times are moved back by this. */
+	static final long REACTION_MS = 150;
+
 	public LyricsEngine(Function<NowPlaying, CompletableFuture<LyricsResult>> fetcher) {
 		this.fetcher = fetcher;
 	}
@@ -90,11 +97,85 @@ public final class LyricsEngine {
 		return best;
 	}
 
+	public NowPlaying currentTrack() {
+		return track;
+	}
+
+	// --- timing recorder -------------------------------------------------------------------
+
+	public boolean canRecord() {
+		Lyrics l = lyrics;
+		return track != null && l != null && l.lines().stream().anyMatch(x -> !x.isBlank());
+	}
+
+	public boolean isRecording() {
+		return recordQueue != null;
+	}
+
+	/** Start timing the current lyrics: each {@link #recordTap} gives the next line its start time. */
+	public boolean startRecording() {
+		if (!canRecord()) return false;
+		java.util.List<String> q = new java.util.ArrayList<>();
+		for (LyricLine line : lyrics.lines()) if (!line.isBlank()) q.add(line.text());
+		recorded.clear();
+		recordedLyrics = new Lyrics(java.util.List.of());
+		trackOffsetMs = 0;
+		recordQueue = q;
+		return true;
+	}
+
+	/** The line the next tap will time, or null. */
+	public String nextRecordLine() {
+		java.util.List<String> q = recordQueue;
+		return q == null || q.isEmpty() ? null : q.get(0);
+	}
+
+	public int recordedCount() {
+		return recorded.size();
+	}
+
+	public int recordTotal() {
+		java.util.List<String> q = recordQueue;
+		return recorded.size() + (q == null ? 0 : q.size());
+	}
+
+	/** Time the next line now. Returns true when every line has been timed. */
+	public boolean recordTap(long nowNanos) {
+		java.util.List<String> q = recordQueue;
+		if (q == null || q.isEmpty()) return true;
+		long t = Math.max(0, Math.round(clock.positionAt(nowNanos)) - REACTION_MS);
+		if (!recorded.isEmpty()) t = Math.max(t, recorded.get(recorded.size() - 1).timeMs() + 10);
+		recorded.add(new LyricLine(t, q.remove(0)));
+		recordedLyrics = new Lyrics(recorded);
+		return q.isEmpty();
+	}
+
+	/** Stop recording; the timed lines (possibly fewer than all) become this song's lyrics. */
+	public Lyrics stopRecording() {
+		Lyrics r = recordedLyrics;
+		recordQueue = null;
+		recordedLyrics = null;
+
+		if (r != null && !r.isEmpty()) {
+			lyrics = r;
+			status = Status.SYNCED;
+		}
+
+		return r;
+	}
+
 	public Snapshot snapshot(long nowNanos, long offsetMs) {
 		NowPlaying t = track;
 
 		if (t == null) {
 			return new Snapshot(Status.IDLE, "", "", null, 0, false, 0);
+		}
+
+		Lyrics rec = recordedLyrics;
+
+		if (recordQueue != null && rec != null) {
+			// While recording, show exactly what has been tapped, at the raw song position.
+			return new Snapshot(Status.SYNCED, t.title(), t.artist(), rec, clock.positionAt(nowNanos), clock.isPlaying(), 60_000);
 		}
 
 		return new Snapshot(status, t.title(), t.artist(), lyrics,
@@ -107,6 +188,8 @@ public final class LyricsEngine {
 		track = np;
 		trackStartNanos = nowNanos;
 		trackOffsetMs = 0;
+		recordQueue = null;
+		recordedLyrics = null;
 		lastSampleNanos = Long.MIN_VALUE;
 		clock.reset();
 		startFetch(np);
@@ -152,6 +235,8 @@ public final class LyricsEngine {
 
 	private void clearTrack() {
 		fetchGeneration++;
+		recordQueue = null;
+		recordedLyrics = null;
 		trackKey = null;
 		track = null;
 		lyrics = null;

@@ -78,8 +78,12 @@ public final class SkyLyricsRenderer {
 
 	/** Briefly show a small message in front of the player (toggle / timing changes). */
 	public void showNotice(String text) {
+		showNotice(text, NOTICE_NANOS);
+	}
+
+	public void showNotice(String text, long durationNanos) {
 		notice = text;
-		noticeUntilNanos = System.nanoTime() + NOTICE_NANOS;
+		noticeUntilNanos = System.nanoTime() + durationNanos;
 	}
 
 	/** Keep the sample lyrics showing (the settings menu calls this every frame). */

@@ -14,7 +14,9 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 
 import dev.skylyrics.SkyLyricsConfig;
+import dev.skylyrics.gui.SettingsModel.Action;
 import dev.skylyrics.gui.SettingsModel.Choice;
+import dev.skylyrics.gui.SettingsModel.Info;
 import dev.skylyrics.gui.SettingsModel.Picker;
 import dev.skylyrics.gui.SettingsModel.Preview;
 import dev.skylyrics.gui.SettingsModel.Swatch;
@@ -57,7 +59,7 @@ public final class SkyLyricsScreen extends Screen {
 	private final SkyLyricsConfig original;
 	private final SkyLyricsRenderer renderer;
 	private final String version;
-	private final List<Tab> tabs = SettingsModel.tabs();
+	private final List<Tab> tabs;
 	private final Map<Entry, Float> knobAnim = new HashMap<>();
 
 	private int tab;
@@ -84,8 +86,9 @@ public final class SkyLyricsScreen extends Screen {
 	 * @param onRestart run by the Restart button (restarts the Spotify reader and re-downloads lyrics)
 	 */
 	public SkyLyricsScreen(SkyLyricsConfig config, SkyLyricsRenderer renderer, String version,
-			Runnable onApply, Runnable onRestart) {
+			Runnable onApply, Runnable onRestart, SettingsModel.MenuActions actions) {
 		super(Component.literal("Sky Lyrics settings"));
+		this.tabs = SettingsModel.tabs(actions);
 		this.onApply = onApply;
 		this.onRestart = onRestart;
 		this.config = config;
@@ -249,6 +252,11 @@ public final class SkyLyricsScreen extends Screen {
 				case Choice ch -> drawChoice(g, ch, right, ry, mx, my, hover);
 				case Picker pk -> drawPicker(g, pk, left, right, ry, mx, my);
 				case Preview pv -> drawPreview(g, left, right, ry);
+				case Info in -> {
+					String v = font.plainSubstrByWidth(in.value().get(), Math.max(20, right - left - font.width(in.label()) - 30));
+					g.text(font, v, right - 9 - font.width(v), ry + 8, 0xFFDAD5FF, false);
+				}
+				case Action ac -> drawAction(g, ac, right, ry, mx, my);
 			}
 		}
 
@@ -504,6 +512,21 @@ public final class SkyLyricsScreen extends Screen {
 		g.pose().popMatrix();
 	}
 
+	private int[] actionBtn(Action a, int right, int ry) {
+		int w = Math.max(64, font.width(a.button().get()) + 18);
+		return new int[] {right - 9 - w, ry + 4, right - 9, ry + ROW_H - 4};
+	}
+
+	private void drawAction(GuiGraphicsExtractor g, Action a, int right, int ry, int mx, int my) {
+		int[] b = actionBtn(a, right, ry);
+		boolean on = a.enabled().getAsBoolean();
+		boolean hover = on && inside(mx, my, b);
+		if (on) hGradient(g, b[0], b[1], b[2], b[3], hover ? Colors.mix(PINK, 0xFFFFFF, 0.15f) : PINK, hover ? Colors.mix(VIOLET, 0xFFFFFF, 0.15f) : VIOLET);
+		else g.fill(b[0], b[1], b[2], b[3], 0xFF26224A);
+		String t = a.button().get();
+		g.text(font, t, b[0] + (b[2] - b[0] - font.width(t)) / 2, b[1] + 4, on ? 0xFFFFFFFF : TEXT_FAINT, on);
+	}
+
 	private int rowY(List<Entry> rows, int i) {
 		int y = listTop() + 4 - Math.round(scroll);
 		for (int k = 0; k < i; k++) y += rows.get(k).height() + ROW_GAP;
@@ -671,6 +694,16 @@ public final class SkyLyricsScreen extends Screen {
 				}
 				case Picker pk -> pickerClick(pk, mx, my);
 				case Preview pv -> {
+				}
+				case Info in -> {
+				}
+				case Action ac -> {
+					int ry = rowY(tabs.get(tab).visible(config), tabs.get(tab).visible(config).indexOf(ac));
+					if (ac.enabled().getAsBoolean() && inside(mx, my, actionBtn(ac, right, ry))) {
+						if (ac.closesMenu()) save();
+						ac.run().run();
+						if (ac.closesMenu()) onClose();
+					}
 				}
 			}
 

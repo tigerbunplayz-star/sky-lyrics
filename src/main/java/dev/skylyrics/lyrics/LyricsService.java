@@ -19,6 +19,7 @@ import dev.skylyrics.media.NowPlaying;
 public final class LyricsService {
 	private static final Logger LOG = LoggerFactory.getLogger("skylyrics");
 
+	private final LocalLyrics local;
 	private final LrcLibClient lrclib;
 	private final YtMusicLyricsClient youtube;
 	private final BooleanSupplier useYoutube;
@@ -29,7 +30,8 @@ public final class LyricsService {
 		return t;
 	});
 
-	public LyricsService(LrcLibClient lrclib, YtMusicLyricsClient youtube, BooleanSupplier useYoutube) {
+	public LyricsService(LocalLyrics local, LrcLibClient lrclib, YtMusicLyricsClient youtube, BooleanSupplier useYoutube) {
+		this.local = local;
 		this.lrclib = lrclib;
 		this.youtube = youtube;
 		this.useYoutube = useYoutube;
@@ -42,10 +44,15 @@ public final class LyricsService {
 
 	public CompletableFuture<LyricsResult> fetch(NowPlaying np) {
 		String key = np.trackKey();
-		LyricsResult cached = cache.get(key);
-		if (cached != null) return CompletableFuture.completedFuture(cached);
 
 		return CompletableFuture.supplyAsync(() -> {
+			// Your own lyrics folder always wins (checked every time, so new files are picked up).
+			LyricsResult mine = local.find(np);
+			if (mine != null) return mine;
+
+			LyricsResult cached = cache.get(key);
+			if (cached != null) return cached;
+
 			LyricsResult result = lookup(np);
 			// Only cache when a source actually answered, so a network hiccup can be retried.
 			if (result != null) cache.put(key, result);
