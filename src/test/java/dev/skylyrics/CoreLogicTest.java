@@ -245,7 +245,7 @@ class CoreLogicTest {
 		assertTrue(texts(LyricScene.compute(e.snapshot(0, 0), LyricScene.Settings.defaults())).contains("KETTŐ"));
 
 		// Shown nothing when estimates are switched off.
-		LyricScene.Settings off = new LyricScene.Settings(12, 3, 36f, 24f, 36f, -1f, 8f, 2200, true, false);
+		LyricScene.Settings off = new LyricScene.Settings(12, 3, 36f, 24f, 36f, -1f, 8f, 2200, true, false, 1f);
 		assertTrue(texts(LyricScene.compute(e.snapshot(0, 0), off)).isEmpty());
 
 		// Player presses sync 1.2 s before the estimated start of line 2: it should line up now.

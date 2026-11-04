@@ -46,9 +46,13 @@ public final class LyricScene {
 
 	public record Settings(int maxChunkChars, int maxChunkWords, float spreadDeg,
 			float distanceMin, float distanceMax, float heightMin, float heightMax,
-			double holdMs, boolean uppercase, boolean showEstimated) {
+			double holdMs, boolean uppercase, boolean showEstimated, float animSpeed) {
 		public static Settings defaults() {
-			return new Settings(12, 3, 36f, 24f, 36f, -1.0f, 8.0f, 2200, true, true);
+			return new Settings(12, 3, 36f, 24f, 36f, -1.0f, 8.0f, 2200, true, true, 1f);
+		}
+
+		double exitMs() {
+			return EXIT_MS / Math.max(0.1f, animSpeed);
 		}
 	}
 
@@ -78,8 +82,8 @@ public final class LyricScene {
 
 			// Title card during the intro, gone just before the first line.
 			if (first >= 0) {
-				double titleExitAt = Math.min(first - EXIT_MS, s.positionMs() - s.msSinceTrackStart() + 12_000);
-				float exit = (float) clamp01((pos - titleExitAt) / EXIT_MS);
+				double titleExitAt = Math.min(first - st.exitMs(), s.positionMs() - s.msSinceTrackStart() + 12_000);
+				float exit = (float) clamp01((pos - titleExitAt) / st.exitMs());
 				String note = estimated ? "timing is estimated \u2013 press the sync key (; or \u00C9) when a line starts" : null;
 				if (exit < 1f) addTitleCard(out, s, note, s.msSinceTrackStart(), exit, st);
 			}
@@ -95,7 +99,7 @@ public final class LyricScene {
 
 		// No synced lyrics: show the title card for a few seconds with a short note.
 		double t = s.msSinceTrackStart();
-		float exit = (float) clamp01((t - TITLE_CARD_MS) / EXIT_MS);
+		float exit = (float) clamp01((t - TITLE_CARD_MS) / st.exitMs());
 		if (exit >= 1f) return out;
 
 		String note = switch (s.status()) {
@@ -142,7 +146,7 @@ public final class LyricScene {
 			double appearMs = pos - appearAt;
 			if (appearMs < 0) continue;
 
-			float exit = (float) clamp01((pos - exitAt - j * 70.0) / EXIT_MS);
+			float exit = (float) clamp01((pos - exitAt - j * 70.0 / Math.max(0.1f, st.animSpeed())) / st.exitMs());
 			if (exit >= 1f) continue;
 
 			Placement place = place(trackSeed, i, j, groups.size(), st);

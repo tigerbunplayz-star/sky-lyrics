@@ -3,5 +3,6 @@
 	"key.skylyrics.toggle": "Show / hide lyrics",
 	"key.skylyrics.earlier": "Lyrics timing: earlier",
 	"key.skylyrics.later": "Lyrics timing: later",
-	"key.skylyrics.sync": "Sync: a line starts now"
+	"key.skylyrics.sync": "Sync: a line starts now",
+	"key.skylyrics.menu": "Open settings"
 }

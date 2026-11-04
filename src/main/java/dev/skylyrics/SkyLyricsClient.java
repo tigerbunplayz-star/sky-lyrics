@@ -18,6 +18,7 @@ import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.fabricmc.loader.api.FabricLoader;
 
+import dev.skylyrics.gui.SkyLyricsScreen;
 import dev.skylyrics.lyrics.LrcLibClient;
 import dev.skylyrics.lyrics.LyricsService;
 import dev.skylyrics.lyrics.YtMusicLyricsClient;
@@ -38,13 +39,15 @@ public final class SkyLyricsClient implements ClientModInitializer {
 	private KeyMapping earlierKey;
 	private KeyMapping laterKey;
 	private KeyMapping syncKey;
+	private KeyMapping menuKey;
+	private String version = "dev";
 
 	@Override
 	public void onInitializeClient() {
 		Path configDir = FabricLoader.getInstance().getConfigDir();
 		config = SkyLyricsConfig.load(configDir.resolve("skylyrics.json"));
 
-		String version = FabricLoader.getInstance().getModContainer(MOD_ID)
+		version = FabricLoader.getInstance().getModContainer(MOD_ID)
 				.map(c -> c.getMetadata().getVersion().getFriendlyString())
 				.orElse("dev");
 		LrcLibClient lrclib = new LrcLibClient(version);
@@ -65,6 +68,7 @@ public final class SkyLyricsClient implements ClientModInitializer {
 		earlierKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.skylyrics.earlier", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_LEFT_BRACKET, category));
 		laterKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.skylyrics.later", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_BRACKET, category));
 		syncKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.skylyrics.sync", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_SEMICOLON, category));
+		menuKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.skylyrics.menu", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_O, category));
 
 		ClientTickEvents.END_CLIENT_TICK.register(this::tick);
 		LevelRenderEvents.COLLECT_SUBMITS.register(renderer::collect);
@@ -75,6 +79,10 @@ public final class SkyLyricsClient implements ClientModInitializer {
 
 	private void tick(Minecraft client) {
 		engine.update(media != null ? media.latest() : null, System.nanoTime());
+
+		while (menuKey.consumeClick()) {
+			client.setScreenAndShow(new SkyLyricsScreen(config, renderer, version));
+		}
 
 		while (toggleKey.consumeClick()) {
 			config.enabled = !config.enabled;

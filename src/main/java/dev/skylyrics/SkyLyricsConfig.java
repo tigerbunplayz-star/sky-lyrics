@@ -45,8 +45,10 @@ public final class SkyLyricsConfig {
 	/** Height above your eyes (blocks). Raise both to put the lyrics up in the sky. */
 	public double heightMin = -1.0;
 	public double heightMax = 8.0;
-	/** How long a line stays after the next one starts (ms). */
+	/** How long a line stays after the next one starts (ms) before it fades. */
 	public long holdMs = 2200;
+	/** Speed of the pop-in / fade-out / bobbing animations (1 = normal). */
+	public double animationSpeed = 1.0;
 	/** Lines are cut into groups of at most this many words / letters. */
 	public int maxWordsPerGroup = 3;
 	public int maxCharsPerGroup = 12;
@@ -129,7 +131,49 @@ public final class SkyLyricsConfig {
 		float hMax = (float) Math.max(heightMin, heightMax);
 		return new LyricScene.Settings(Math.max(4, maxCharsPerGroup), Math.max(1, maxWordsPerGroup),
 				(float) Math.max(0, Math.min(80, spread)), dMin, dMax, hMin, hMax, Math.max(0, holdMs), uppercase,
-				estimateUnsyncedLyrics);
+				estimateUnsyncedLyrics, (float) Math.max(0.1, animationSpeed));
+	}
+
+	/** A full copy (used by the settings menu to undo on Cancel). */
+	public SkyLyricsConfig copy() {
+		SkyLyricsConfig c = GSON.fromJson(GSON.toJson(this), SkyLyricsConfig.class);
+		c.path = path;
+		return c;
+	}
+
+	/** Overwrite every setting with the other config's values. */
+	public void copyFrom(SkyLyricsConfig other) {
+		SkyLyricsConfig c = GSON.fromJson(GSON.toJson(other), SkyLyricsConfig.class);
+		for (java.lang.reflect.Field f : SkyLyricsConfig.class.getDeclaredFields()) {
+			int mod = f.getModifiers();
+			if (java.lang.reflect.Modifier.isStatic(mod) || java.lang.reflect.Modifier.isTransient(mod)) continue;
+			try {
+				f.set(this, f.get(c));
+			} catch (IllegalAccessException e) {
+				throw new IllegalStateException(e);
+			}
+		}
+	}
+
+	/** Middle of the distance range; the menu moves both ends together. */
+	public double distanceCenter() {
+		return (distanceMin + distanceMax) / 2.0;
+	}
+
+	public void setDistanceCenter(double center) {
+		distanceMin = Math.round(center * 0.8 * 10) / 10.0;
+		distanceMax = Math.round(center * 1.2 * 10) / 10.0;
+	}
+
+	/** Middle of the height range; the menu moves both ends together. */
+	public double heightCenter() {
+		return (heightMin + heightMax) / 2.0;
+	}
+
+	public void setHeightCenter(double center) {
+		double half = Math.max(0.5, (heightMax - heightMin) / 2.0);
+		heightMin = Math.round((center - half) * 10) / 10.0;
+		heightMax = Math.round((center + half) * 10) / 10.0;
 	}
 
 	public static int parseColor(String hex, int fallback) {

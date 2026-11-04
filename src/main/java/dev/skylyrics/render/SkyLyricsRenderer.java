@@ -25,6 +25,8 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 
 import dev.skylyrics.LyricsEngine;
 import dev.skylyrics.SkyLyricsConfig;
+import dev.skylyrics.lyrics.LrcParser;
+import dev.skylyrics.lyrics.Lyrics;
 import dev.skylyrics.render.LyricScene.Chunk;
 import dev.skylyrics.render.LyricScene.Kind;
 import dev.skylyrics.render.LyricScene.Placement;
@@ -45,7 +47,7 @@ public final class SkyLyricsRenderer {
 	private static final double APPEAR_MS = 520;
 	private static final long NOTICE_NANOS = 1_800_000_000L;
 
-	private static final FontDescription BLOCK_FONT = new FontDescription.Resource(Identifier.fromNamespaceAndPath("skylyrics", "block"));
+	public static final FontDescription BLOCK_FONT = new FontDescription.Resource(Identifier.fromNamespaceAndPath("skylyrics", "block"));
 	private static final FontDescription LOBSTER_FONT = new FontDescription.Resource(Identifier.fromNamespaceAndPath("skylyrics", "lobster"));
 
 	private record Anchor(double x, double y, double z, float yaw) {
@@ -57,6 +59,17 @@ public final class SkyLyricsRenderer {
 	private String anchorTrack = "";
 	private volatile String notice;
 	private volatile long noticeUntilNanos;
+	private volatile long previewUntilNanos;
+	private long previewStartNanos;
+
+	/** Sample phrases (written for this mod) shown while the settings menu is open and nothing plays. */
+	private static final Lyrics PREVIEW = LrcParser.parse("""
+			[00:00.00]This is Sky Lyrics
+			[00:02.60]words pop up around you
+			[00:05.20]change a slider, watch them move
+			[00:08.00]
+			""");
+	private static final long PREVIEW_LOOP_MS = 9_500;
 
 	public SkyLyricsRenderer(Supplier<SkyLyricsConfig> config, LyricsEngine engine) {
 		this.config = config;
@@ -67,6 +80,13 @@ public final class SkyLyricsRenderer {
 	public void showNotice(String text) {
 		notice = text;
 		noticeUntilNanos = System.nanoTime() + NOTICE_NANOS;
+	}
+
+	/** Keep the sample lyrics showing (the settings menu calls this every frame). */
+	public void keepPreview() {
+		long now = System.nanoTime();
+		if (now - previewUntilNanos > 1_000_000_000L) previewStartNanos = now;
+		previewUntilNanos = now + 300_000_000L;
 	}
 
 	public void collect(LevelRenderContext context) {
@@ -80,6 +100,11 @@ public final class SkyLyricsRenderer {
 		float viewYaw = mc.player.getYRot();
 
 		LyricsEngine.Snapshot snap = engine.snapshot(now, cfg.offsetMs);
+
+		if (snap.status() == LyricsEngine.Status.IDLE && now < previewUntilNanos) {
+			double pos = ((now - previewStartNanos) / 1_000_000.0) % PREVIEW_LOOP_MS;
+			snap = new LyricsEngine.Snapshot(LyricsEngine.Status.SYNCED, "Sky Lyrics", "Preview", PREVIEW, pos, true, 60_000);
+		}
 		String track = snap.title() + "\u0001" + snap.artist();
 
 		if (!track.equals(anchorTrack)) {
@@ -115,7 +140,8 @@ public final class SkyLyricsRenderer {
 		Placement p = c.place();
 
 		// Pop up from below with a little overshoot and swing into place; shrink and sink away.
-		float in = (float) clamp01(c.appearMs() / APPEAR_MS);
+		float speed = (float) Math.max(0.1, cfg.animationSpeed);
+		float in = (float) clamp01(c.appearMs() * speed / APPEAR_MS);
 		if (c.appearMs() < 0) return;
 		float pop = easeOutBack(in);
 		float settle = 1f - easeOutCubic(in);
@@ -124,8 +150,8 @@ public final class SkyLyricsRenderer {
 		float scaleAnim = Math.max(0f, pop * shrink);
 		if (scaleAnim < 0.02f) return;
 
-		float bob = cfg.bob ? (float) Math.sin(timeS * 1.7 + p.phase()) * 0.12f : 0f;
-		float sway = cfg.bob ? (float) Math.sin(timeS * 0.9 + p.phase() * 1.3) * 2.5f : 0f;
+		float bob = cfg.bob ? (float) Math.sin(timeS * 1.7 * speed + p.phase()) * 0.12f : 0f;
+		float sway = cfg.bob ? (float) Math.sin(timeS * 0.9 * speed + p.phase() * 1.3) * 2.5f : 0f;
 		float lift = -settle * 1.6f - exit * 1.4f + bob;
 
 		boolean note = c.kind() == Kind.NOTE;
