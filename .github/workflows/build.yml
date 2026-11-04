@@ -35,6 +35,15 @@ jobs:
           msg=$(grep -E '\.java:[0-9]+: error:|^\s+(symbol|location|required|found|reason):|FAILED|Exception' build.log | head -40)
           [ -n "$msg" ] || msg=$(tail -40 build.log)
           echo "::error title=build failed::$(printf '%s' "$msg" | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+      - name: probe gui api
+        if: always()
+        run: |
+          jar=$(find ~/.gradle/caches/fabric-loom -name 'minecraft-merged*.jar' | head -1)
+          probe() { echo "::notice title=$1::$( { eval "$2"; } 2>&1 | head -${3:-60} | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"; }
+          probe screen "javap -protected -cp $jar net.minecraft.client.gui.screens.Screen | grep -vE 'static|lambda' | grep -iE 'extract|render|mouse|key|char|init|close|pause|Screen\(|tick|width|height|font|minecraft|background|added|removed'" 70
+          probe gfx "javap -public -cp $jar net.minecraft.client.gui.GuiGraphicsExtractor | grep -iE 'fill|text|scissor|gradient|outline|border|pose|guiWidth|guiHeight|blur|nextStratum|requestCursor'" 70
+          probe listener "javap -public -cp $jar net.minecraft.client.gui.components.events.GuiEventListener; javap -public -cp $jar net.minecraft.client.input.MouseButtonEvent | grep -v static; javap -public -cp $jar net.minecraft.client.input.KeyEvent | grep -vE 'static|lambda'" 70
+          probe misc "javap -public -cp $jar net.minecraft.client.Minecraft | grep -iE 'setScreen|screen;'; javap -public -cp $jar net.minecraft.client.gui.Font | grep -iE 'width|split|lineHeight|plainSubstrByWidth'; unzip -l $jar | grep -oE 'net/minecraft/client/input/[A-Za-z]+\.class'" 40
       - name: live lyrics lookup check
         if: success()
         continue-on-error: true
