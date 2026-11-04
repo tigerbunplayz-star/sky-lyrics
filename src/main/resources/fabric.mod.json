@@ -1,0 +1,27 @@
+{
+	"schemaVersion": 1,
+	"id": "skylyrics",
+	"version": "${version}",
+	"name": "Sky Lyrics",
+	"description": "Shows the lyrics of the song playing in Spotify, synced, floating in the Minecraft sky.",
+	"authors": [
+		"tigerbunplayz"
+	],
+	"contact": {
+		"sources": "https://github.com/tigerbunplayz-star/sky-lyrics"
+	},
+	"license": "MIT",
+	"icon": "assets/skylyrics/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"dev.skylyrics.SkyLyricsClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.20.1",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
