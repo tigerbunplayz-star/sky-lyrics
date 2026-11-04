@@ -46,9 +46,9 @@ public final class LyricScene {
 
 	public record Settings(int maxChunkChars, int maxChunkWords, float spreadDeg,
 			float distanceMin, float distanceMax, float heightMin, float heightMax,
-			double holdMs, boolean uppercase) {
+			double holdMs, boolean uppercase, boolean showEstimated) {
 		public static Settings defaults() {
-			return new Settings(12, 3, 38f, 13f, 22f, -0.5f, 4.5f, 2200, true);
+			return new Settings(12, 3, 36f, 24f, 36f, -1.0f, 8.0f, 2200, true, true);
 		}
 	}
 
@@ -68,7 +68,10 @@ public final class LyricScene {
 
 		long trackSeed = (s.title() + "\u0001" + s.artist()).hashCode();
 
-		if (s.status() == Status.SYNCED && s.lyrics() != null && !s.lyrics().isEmpty()) {
+		boolean estimated = s.status() == Status.ESTIMATED;
+		boolean timed = s.status() == Status.SYNCED || (estimated && st.showEstimated());
+
+		if (timed && s.lyrics() != null && !s.lyrics().isEmpty()) {
 			Lyrics lyrics = s.lyrics();
 			double pos = s.positionMs();
 			long first = lyrics.firstLineTime();
@@ -77,7 +80,8 @@ public final class LyricScene {
 			if (first >= 0) {
 				double titleExitAt = Math.min(first - EXIT_MS, s.positionMs() - s.msSinceTrackStart() + 12_000);
 				float exit = (float) clamp01((pos - titleExitAt) / EXIT_MS);
-				if (exit < 1f) addTitleCard(out, s, null, s.msSinceTrackStart(), exit, st);
+				String note = estimated ? "timing is estimated \u2013 press the sync key (; or \u00C9) when a line starts" : null;
+				if (exit < 1f) addTitleCard(out, s, note, s.msSinceTrackStart(), exit, st);
 			}
 
 			int idx = lyrics.indexAt(pos);
@@ -96,7 +100,7 @@ public final class LyricScene {
 
 		String note = switch (s.status()) {
 			case LOADING -> "finding lyrics…";
-			case UNSYNCED -> "only unsynced lyrics exist for this song";
+			case UNSYNCED, ESTIMATED -> "only unsynced lyrics exist for this song";
 			case INSTRUMENTAL -> "♪ instrumental ♪";
 			case NOT_FOUND -> "no synced lyrics found";
 			case ERROR -> "couldn't reach the lyrics server";
@@ -152,16 +156,16 @@ public final class LyricScene {
 		float titleSize = (float) Math.max(0.55, Math.min(1.15, 13.0 / Math.max(1, title.length()) * 1.1));
 
 		out.add(new Chunk(Kind.TITLE, title, TITLE_KEY, appearMs, exit,
-				new Placement(0f, 18f, 3.2f, titleSize, 0f, 0f, 0.3f), 0));
+				new Placement(0f, 30f, 5.3f, titleSize, 0f, 0f, 0.3f), 0));
 
 		if (!s.artist().isEmpty()) {
 			out.add(new Chunk(Kind.ARTIST, s.artist(), ARTIST_KEY, appearMs - 250, exit,
-					new Placement(0f, 18f, 1.5f, 0.5f, 0f, 0f, 1.7f), 3));
+					new Placement(0f, 30f, 2.5f, 0.5f, 0f, 0f, 1.7f), 3));
 		}
 
 		if (note != null) {
 			out.add(new Chunk(Kind.NOTE, note, NOTE_KEY, appearMs - 500, exit,
-					new Placement(0f, 18f, 0.5f, 0.38f, 0f, 0f, 2.9f), 0));
+					new Placement(0f, 30f, 0.8f, 0.45f, 0f, 0f, 2.9f), 0));
 		}
 	}
 

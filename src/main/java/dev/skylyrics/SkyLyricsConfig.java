@@ -38,13 +38,13 @@ public final class SkyLyricsConfig {
 	/** Let the words bob and sway a little. */
 	public boolean bob = true;
 	/** How far left/right of where you look the words can appear (degrees). */
-	public double spread = 38;
+	public double spread = 36;
 	/** How far away the words appear (blocks). */
-	public double distanceMin = 13;
-	public double distanceMax = 22;
+	public double distanceMin = 24;
+	public double distanceMax = 36;
 	/** Height above your eyes (blocks). Raise both to put the lyrics up in the sky. */
-	public double heightMin = -0.5;
-	public double heightMax = 4.5;
+	public double heightMin = -1.0;
+	public double heightMax = 8.0;
 	/** How long a line stays after the next one starts (ms). */
 	public long holdMs = 2200;
 	/** Lines are cut into groups of at most this many words / letters. */
@@ -54,6 +54,15 @@ public final class SkyLyricsConfig {
 	public long offsetMs = 0;
 	/** Which app to read: "spotify", or "*" for whatever is playing (browsers, other players). */
 	public String player = "spotify";
+	/**
+	 * When a song only has plain (untimed) lyrics, show them anyway with estimated timing.
+	 * Press ; in game the moment you hear a line start to line them up.
+	 */
+	public boolean estimateUnsyncedLyrics = true;
+	/** Settings file format; used to upgrade old files. */
+	public int configVersion = 0;
+
+	private static final int CURRENT_VERSION = 2;
 
 	private transient Path path;
 
@@ -70,9 +79,20 @@ public final class SkyLyricsConfig {
 
 		if (cfg == null) cfg = new SkyLyricsConfig();
 		if (cfg.colors == null || cfg.colors.isEmpty()) cfg.colors = new SkyLyricsConfig().colors;
+		cfg.upgrade();
 		cfg.path = path;
 		cfg.save(); // writes any new settings with their defaults
 		return cfg;
+	}
+
+	/** Files from 1.1.0 have no version: move untouched old defaults to the new, farther ones. */
+	private void upgrade() {
+		if (configVersion >= CURRENT_VERSION) return;
+		SkyLyricsConfig d = new SkyLyricsConfig();
+		if (distanceMin == 13 && distanceMax == 22) { distanceMin = d.distanceMin; distanceMax = d.distanceMax; }
+		if (heightMin == -0.5 && heightMax == 4.5) { heightMin = d.heightMin; heightMax = d.heightMax; }
+		if (spread == 38) spread = d.spread;
+		configVersion = CURRENT_VERSION;
 	}
 
 	public void save() {
@@ -95,7 +115,8 @@ public final class SkyLyricsConfig {
 		float hMin = (float) Math.min(heightMin, heightMax);
 		float hMax = (float) Math.max(heightMin, heightMax);
 		return new LyricScene.Settings(Math.max(4, maxCharsPerGroup), Math.max(1, maxWordsPerGroup),
-				(float) Math.max(0, Math.min(80, spread)), dMin, dMax, hMin, hMax, Math.max(0, holdMs), uppercase);
+				(float) Math.max(0, Math.min(80, spread)), dMin, dMax, hMin, hMax, Math.max(0, holdMs), uppercase,
+				estimateUnsyncedLyrics);
 	}
 
 	public static int parseColor(String hex, int fallback) {

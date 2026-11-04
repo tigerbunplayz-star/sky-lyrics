@@ -211,6 +211,48 @@ class CoreLogicTest {
 		assertEquals(0x808080, Colors.mix(0x000000, 0xFFFFFF, 0.5f));
 	}
 
+	@Test
+	void estimatesTimingForPlainLyrics() {
+		String plain = "[Verse 1]\nA sör, a bor, a pálinka\nMind jó barát\n\nRefrén:\nEgy hosszabb sor itt a refrénben ami tovább tart\nVége";
+		Lyrics l = dev.skylyrics.lyrics.PlainLyricsEstimator.estimate(plain, 200_000);
+		List<String> texts = l.lines().stream().map(dev.skylyrics.lyrics.LyricLine::text).toList();
+		assertEquals(List.of("A sör, a bor, a pálinka", "Mind jó barát", "", "Egy hosszabb sor itt a refrénben ami tovább tart", "Vége"), texts);
+		assertTrue(l.get(0).timeMs() >= 6_000 && l.get(0).timeMs() <= 18_000, "short intro before the first line");
+		for (int i = 1; i < l.size(); i++) assertTrue(l.get(i).timeMs() > l.get(i - 1).timeMs());
+		assertTrue(l.get(l.size() - 1).timeMs() < 200_000 - 4_000, "last line before the outro");
+		// longer lines get more time
+		long longGap = l.get(4).timeMs() - l.get(3).timeMs();
+		long shortGap = l.get(2).timeMs() - l.get(1).timeMs();
+		assertTrue(longGap > shortGap);
+		assertTrue(dev.skylyrics.lyrics.PlainLyricsEstimator.estimate("\n\n", 100_000).isEmpty());
+	}
+
+	@Test
+	void estimatedLyricsAreShownAndSyncKeyShiftsThem() {
+		Lyrics lyrics = dev.skylyrics.lyrics.PlainLyricsEstimator.estimate("Egy\nKettő\nHárom\nNégy", 120_000);
+		LyricsEngine e = new LyricsEngine(np -> CompletableFuture.completedFuture(new LyricsResult(LyricsResult.Kind.ESTIMATED, lyrics)));
+		long t1 = lyrics.get(1).timeMs();
+
+		e.update(new NowPlaying("Song", "Artist", "", t1 + 50, 120_000, true, 0), 0);
+		assertEquals(Status.ESTIMATED, e.snapshot(0, 0).status());
+		assertTrue(texts(LyricScene.compute(e.snapshot(0, 0), LyricScene.Settings.defaults())).contains("KETTŐ"));
+
+		// Shown nothing when estimates are switched off.
+		LyricScene.Settings off = new LyricScene.Settings(12, 3, 36f, 24f, 36f, -1f, 8f, 2200, true, false);
+		assertTrue(texts(LyricScene.compute(e.snapshot(0, 0), off)).isEmpty());
+
+		// Player presses sync 1.2 s before the estimated start of line 2: it should line up now.
+		long t2 = lyrics.get(2).timeMs();
+		e.update(new NowPlaying("Song", "Artist", "", t2 - 1200, 120_000, true, 1000 * MS), 1000 * MS);
+		Long shift = e.syncLineStartsNow(1000 * MS, 0);
+		assertEquals(1200L, shift.longValue(), 30);
+		assertEquals(t2, e.snapshot(1000 * MS, 0).positionMs(), 30);
+
+		// A new song starts with no extra shift.
+		e.update(new NowPlaying("Other", "Artist", "", 5_000, 120_000, true, 2000 * MS), 2000 * MS);
+		assertEquals(5_000, e.snapshot(2000 * MS, 0).positionMs(), 30);
+	}
+
 	private static List<String> texts(List<LyricScene.Chunk> chunks) {
 		return chunks.stream().filter(c -> c.kind() == LyricScene.Kind.LYRIC).map(LyricScene.Chunk::text).toList();
 	}

@@ -1,7 +1,8 @@
 package dev.skylyrics.lyrics;
 
 public record LyricsResult(Kind kind, Lyrics lyrics) {
-	public enum Kind { SYNCED, UNSYNCED, INSTRUMENTAL, NOT_FOUND }
+	/** ESTIMATED: only plain lyrics existed, so the line times are a guess. */
+	public enum Kind { SYNCED, ESTIMATED, UNSYNCED, INSTRUMENTAL, NOT_FOUND }
 
 	public static LyricsResult synced(Lyrics lyrics) {
 		return new LyricsResult(Kind.SYNCED, lyrics);

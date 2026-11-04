@@ -36,7 +36,7 @@ import dev.skylyrics.render.LyricScene.Placement;
  */
 public final class SkyLyricsRenderer {
 	/** Blocks per font pixel for a group 18 blocks away (keeps size similar at any distance). */
-	private static final float BASE_SCALE = 0.17f;
+	private static final float BASE_SCALE = 0.13f;
 	private static final float REFERENCE_DISTANCE = 18f;
 	/** Slices stacked behind the front face to make the letters look solid. */
 	private static final int DEPTH_LAYERS = 12;

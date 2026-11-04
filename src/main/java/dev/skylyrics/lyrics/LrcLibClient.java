@@ -79,7 +79,7 @@ public final class LrcLibClient {
 
 			if (durationS > 0) {
 				best = better(best, getExact(title, artist, np.album(), durationS), durationS);
-				if (best != null && best.kind == LyricsResult.Kind.SYNCED) return best.toResult();
+				if (best != null && best.kind == LyricsResult.Kind.SYNCED) return best.toResult(np.durationMs());
 			}
 
 			// From most to least precise. Lyrics databases often spell non-English songs
@@ -99,11 +99,11 @@ public final class LrcLibClient {
 				// Loose searches (no artist given) must match the artist themselves.
 				boolean needArtist = !query.containsKey("artist_name");
 				best = better(best, search(query, artist, needArtist, durationS), durationS);
-				if (isGoodSynced(best, durationS)) return best.toResult();
+				if (isGoodSynced(best, durationS)) return best.toResult(np.durationMs());
 			}
 
 			if (best == null) return LyricsResult.of(LyricsResult.Kind.NOT_FOUND);
-			return best.toResult();
+			return best.toResult(np.durationMs());
 		} catch (IOException e) {
 			LOG.warn("[Sky Lyrics] Lyrics lookup failed for '{}' by '{}': {}", title, artist, e.toString());
 			throw new RuntimeException(e);
@@ -175,9 +175,10 @@ public final class LrcLibClient {
 
 	private static int rank(Candidate c) {
 		return switch (c.kind) {
-			case SYNCED -> 3;
-			case INSTRUMENTAL -> 2;
-			case UNSYNCED -> 1;
+			case SYNCED -> 4;
+			case ESTIMATED -> 3;
+			case UNSYNCED -> 2; // plain lyrics beat an "instrumental" match: they can be shown
+			case INSTRUMENTAL -> 1;
 			case NOT_FOUND -> 0;
 		};
 	}
@@ -198,6 +199,7 @@ public final class LrcLibClient {
 		final Lyrics lyrics;
 		final double durationS;
 		String artistName = "";
+		String plainLyrics;
 
 		Candidate(LyricsResult.Kind kind, Lyrics lyrics, double durationS) {
 			this.kind = kind;
@@ -230,12 +232,27 @@ public final class LrcLibClient {
 			}
 
 			String plain = str(o, "plainLyrics");
-			if (plain != null && !plain.isBlank()) return new Candidate(LyricsResult.Kind.UNSYNCED, null, duration);
+
+			if (plain != null && !plain.isBlank()) {
+				Candidate c = new Candidate(LyricsResult.Kind.UNSYNCED, null, duration);
+				c.plainLyrics = plain;
+				return c;
+			}
+
 			return null;
 		}
 
-		LyricsResult toResult() {
-			return kind == LyricsResult.Kind.SYNCED ? LyricsResult.synced(lyrics) : LyricsResult.of(kind);
+		LyricsResult toResult(long trackDurationMs) {
+			if (kind == LyricsResult.Kind.SYNCED) return LyricsResult.synced(lyrics);
+
+			// Only plain lyrics exist (common for Hungarian songs): estimate their timing.
+			if (kind == LyricsResult.Kind.UNSYNCED && plainLyrics != null) {
+				long dur = trackDurationMs > 0 ? trackDurationMs : Math.round(durationS * 1000);
+				Lyrics estimated = PlainLyricsEstimator.estimate(plainLyrics, dur);
+				if (!estimated.isEmpty()) return new LyricsResult(LyricsResult.Kind.ESTIMATED, estimated);
+			}
+
+			return LyricsResult.of(kind);
 		}
 
 		private static String str(JsonObject o, String k) {

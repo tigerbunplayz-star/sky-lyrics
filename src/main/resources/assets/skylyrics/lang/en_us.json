@@ -1,6 +1,7 @@
 {
 	"key.category.skylyrics.main": "Sky Lyrics",
-	"key.skylyrics.toggle": "Show / hide sky lyrics",
+	"key.skylyrics.toggle": "Show / hide lyrics",
 	"key.skylyrics.earlier": "Lyrics timing: earlier",
-	"key.skylyrics.later": "Lyrics timing: later"
+	"key.skylyrics.later": "Lyrics timing: later",
+	"key.skylyrics.sync": "Sync: a line starts now"
 }

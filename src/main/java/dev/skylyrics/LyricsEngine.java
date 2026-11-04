@@ -3,6 +3,7 @@ package dev.skylyrics;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
+import dev.skylyrics.lyrics.LyricLine;
 import dev.skylyrics.lyrics.Lyrics;
 import dev.skylyrics.lyrics.LyricsResult;
 import dev.skylyrics.media.NowPlaying;
@@ -10,7 +11,7 @@ import dev.skylyrics.media.PlaybackClock;
 
 /** Follows the current track, fetches its lyrics and keeps a smooth playback clock. */
 public final class LyricsEngine {
-	public enum Status { IDLE, LOADING, SYNCED, UNSYNCED, INSTRUMENTAL, NOT_FOUND, ERROR }
+	public enum Status { IDLE, LOADING, SYNCED, ESTIMATED, UNSYNCED, INSTRUMENTAL, NOT_FOUND, ERROR }
 
 	/** Everything the sky needs to draw one frame. */
 	public record Snapshot(Status status, String title, String artist, Lyrics lyrics,
@@ -26,6 +27,8 @@ public final class LyricsEngine {
 	private long lastSampleNanos = Long.MIN_VALUE;
 	private volatile int fetchGeneration;
 	private volatile Status status = Status.IDLE;
+	/** Timing correction for the current song only, from the sync key. */
+	private volatile long trackOffsetMs;
 	private volatile Lyrics lyrics;
 
 	public LyricsEngine(Function<NowPlaying, CompletableFuture<LyricsResult>> fetcher) {
@@ -60,6 +63,33 @@ public final class LyricsEngine {
 		if (track != null) startFetch(track);
 	}
 
+	/**
+	 * The player pressed the sync key because a line is starting right now. Shifts this song's
+	 * timing so the nearest line start (just passed or coming up) lines up with this moment.
+	 *
+	 * @return the shift applied in ms, or null if there are no lyrics to sync
+	 */
+	public Long syncLineStartsNow(long nowNanos, long offsetMs) {
+		Lyrics l = lyrics;
+		if (track == null || l == null || l.isEmpty()) return null;
+
+		double pos = clock.positionAt(nowNanos) + offsetMs + trackOffsetMs;
+		long best = Long.MAX_VALUE;
+
+		int idx = l.indexAt(pos);
+
+		for (int i = Math.max(0, idx - 1); i < l.size() && i <= idx + 2; i++) {
+			LyricLine line = l.get(i);
+			if (line == null || line.isBlank()) continue;
+			long delta = Math.round(line.timeMs() - pos);
+			if (Math.abs(delta) < Math.abs(best)) best = delta;
+		}
+
+		if (best == Long.MAX_VALUE) return null;
+		trackOffsetMs += best;
+		return best;
+	}
+
 	public Snapshot snapshot(long nowNanos, long offsetMs) {
 		NowPlaying t = track;
 
@@ -68,7 +98,7 @@ public final class LyricsEngine {
 		}
 
 		return new Snapshot(status, t.title(), t.artist(), lyrics,
-				clock.positionAt(nowNanos) + offsetMs, clock.isPlaying(),
+				clock.positionAt(nowNanos) + offsetMs + trackOffsetMs, clock.isPlaying(),
 				(nowNanos - trackStartNanos) / 1_000_000.0);
 	}
 
@@ -76,6 +106,7 @@ public final class LyricsEngine {
 		trackKey = np.trackKey();
 		track = np;
 		trackStartNanos = nowNanos;
+		trackOffsetMs = 0;
 		lastSampleNanos = Long.MIN_VALUE;
 		clock.reset();
 		startFetch(np);
@@ -107,6 +138,10 @@ public final class LyricsEngine {
 				case SYNCED -> {
 					lyrics = result.lyrics();
 					status = Status.SYNCED;
+				}
+				case ESTIMATED -> {
+					lyrics = result.lyrics();
+					status = Status.ESTIMATED;
 				}
 				case UNSYNCED -> status = Status.UNSYNCED;
 				case INSTRUMENTAL -> status = Status.INSTRUMENTAL;

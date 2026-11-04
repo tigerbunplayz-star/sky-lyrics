@@ -35,6 +35,7 @@ public final class SkyLyricsClient implements ClientModInitializer {
 	private KeyMapping toggleKey;
 	private KeyMapping earlierKey;
 	private KeyMapping laterKey;
+	private KeyMapping syncKey;
 
 	@Override
 	public void onInitializeClient() {
@@ -59,6 +60,7 @@ public final class SkyLyricsClient implements ClientModInitializer {
 		toggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.skylyrics.toggle", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_K, category));
 		earlierKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.skylyrics.earlier", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_LEFT_BRACKET, category));
 		laterKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.skylyrics.later", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_BRACKET, category));
+		syncKey = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.skylyrics.sync", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_SEMICOLON, category));
 
 		ClientTickEvents.END_CLIENT_TICK.register(this::tick);
 		LevelRenderEvents.COLLECT_SUBMITS.register(renderer::collect);
@@ -86,6 +88,12 @@ public final class SkyLyricsClient implements ClientModInitializer {
 		while (laterKey.consumeClick()) {
 			config.offsetMs -= OFFSET_STEP_MS;
 			offsetChanged = true;
+		}
+
+		while (syncKey.consumeClick()) {
+			Long shift = engine.syncLineStartsNow(System.nanoTime(), config.offsetMs);
+			renderer.showNotice(shift == null ? "No lyrics to sync"
+					: shift == 0 ? "Lyrics synced" : "Lyrics synced (" + (shift > 0 ? "+" : "") + shift + " ms)");
 		}
 
 		if (offsetChanged) {
