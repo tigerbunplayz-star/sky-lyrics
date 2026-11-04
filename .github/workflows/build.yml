@@ -50,35 +50,29 @@ jobs:
             **Install:** put the jar below and [Fabric API](https://modrinth.com/mod/fabric-api) (26.2) into `.minecraft/mods`, launch the Fabric 26.2 profile, play something in the Spotify desktop app and look up.
 
             **Keys:** `K` show/hide · `[` lyrics earlier · `]` lyrics later. Settings: `.minecraft/config/skylyrics.json`.
-      - name: remove temporary log branches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          for b in ci-logs ci-logs-windows; do
-            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/$b" 2>/dev/null && echo "deleted $b" || true
-          done
 
   media-reader:
     runs-on: windows-latest
     steps:
       - name: checkout repository
         uses: actions/checkout@v6
-      - name: run the media reader for a few seconds
+      - name: run the media reader and check its output
         shell: pwsh
         run: |
           $p = Start-Process powershell.exe -PassThru -NoNewWindow `
             -ArgumentList '-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','src/main/resources/skylyrics/media.ps1','-Filter','spotify','-ParentPid',"$PID" `
             -RedirectStandardOutput out.txt -RedirectStandardError err.txt
-          Start-Sleep -Seconds 10
+          $deadline = (Get-Date).AddSeconds(40)
+          do {
+            Start-Sleep -Seconds 1
+            $lines = @(Get-Content out.txt -ErrorAction SilentlyContinue | Where-Object { $_ -match '^\{' })
+          } while ($lines.Count -lt 5 -and -not $p.HasExited -and (Get-Date) -lt $deadline)
           $alive = -not $p.HasExited
           if ($alive) { Stop-Process -Id $p.Id -Force }
-          @("alive_after_10s=$alive", '--- stdout', (Get-Content out.txt -TotalCount 15), '--- stderr', (Get-Content err.txt)) | Set-Content media-reader.log
-          Get-Content media-reader.log
-      - name: validate output
-        shell: pwsh
-        run: |
-          $lines = @(Get-Content out.txt | Where-Object { $_ -match '^\{' })
-          if ($lines.Count -lt 5) { throw "media reader printed only $($lines.Count) JSON lines" }
+          "alive=$alive lines=$($lines.Count)"
+          '--- stdout'; Get-Content out.txt -TotalCount 10
+          '--- stderr'; Get-Content err.txt
+          if (-not $alive) { throw 'media reader exited early' }
+          if ($lines.Count -lt 5) { throw "media reader printed only $($lines.Count) JSON lines in 40s" }
           foreach ($l in $lines) { $o = $l | ConvertFrom-Json; if ($null -eq $o.ok) { throw "bad line: $l" } }
           "ok: $($lines.Count) valid lines"
