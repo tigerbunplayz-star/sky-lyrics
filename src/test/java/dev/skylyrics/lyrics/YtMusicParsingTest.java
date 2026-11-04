@@ -49,4 +49,19 @@ class YtMusicParsingTest {
 		assertEquals(null, YtMusicLyricsClient.videoIdFromLink("https://example.com/watch?v=UPA6XHXopzY"));
 		assertEquals(null, YtMusicLyricsClient.videoIdFromLink("hello"));
 	}
+
+	@Test
+	void videoTitlesBecomeSongTitles() {
+		assertEquals("TOP 1", YtMusicLyricsClient.songTitleFromVideo("SAKI & BALESZKO TOP 1 (Official Music)", "Saki & Baleszko"));
+		assertEquals("Song Name", YtMusicLyricsClient.songTitleFromVideo("Some Band - Song Name (Official Video)", "Some Band"));
+		assertEquals("Song Name", YtMusicLyricsClient.songTitleFromVideo("Song Name | Some Band", "Some Band"));
+		assertEquals("Just A Title", YtMusicLyricsClient.songTitleFromVideo("Just A Title [Lyric Video]", "Other"));
+	}
+
+	@Test
+	void titlesMustReallyMatch() {
+		org.junit.jupiter.api.Assertions.assertTrue(YtMusicLyricsClient.titleMatches("top1", "top1"));
+		org.junit.jupiter.api.Assertions.assertTrue(YtMusicLyricsClient.titleMatches("blindinglights", "blindinglightsremix"));
+		org.junit.jupiter.api.Assertions.assertFalse(YtMusicLyricsClient.titleMatches("sakibaleszkotop1", "saki"));
+	}
 }

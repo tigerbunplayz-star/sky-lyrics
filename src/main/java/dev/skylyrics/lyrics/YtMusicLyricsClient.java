@@ -107,7 +107,7 @@ public final class YtMusicLyricsClient {
 			String[] info = videoInfo(next, videoId);
 
 			if (info != null) {
-				NowPlaying np = new NowPlaying(info[0], info[1], "", 0, durationMs, true, 0);
+				NowPlaying np = new NowPlaying(songTitleFromVideo(info[0], info[1]), info[1], "", 0, durationMs, true, 0);
 				Hit hit = findSong(np);
 				if (hit != null && !hit.videoId().equals(videoId)) browseId = lyricsBrowseId(hit.videoId());
 			}
@@ -160,7 +160,7 @@ public final class YtMusicLyricsClient {
 		for (int i = 0; i < hits.size() && i < 10; i++) {
 			Hit h = hits.get(i);
 			String title = TitleCleaner.normalize(TitleCleaner.cleanTitle(h.title()));
-			boolean titleMatch = !wantTitle.isEmpty() && (title.equals(wantTitle) || title.contains(wantTitle) || wantTitle.contains(title));
+			boolean titleMatch = titleMatches(wantTitle, title);
 			boolean artistMatch = TitleCleaner.normalize(h.subtitle()).contains(TitleCleaner.normalize(TitleCleaner.primaryArtist(np.artist())));
 			boolean durationKnown = wantS > 0 && h.durationS() > 0;
 			double diff = durationKnown ? Math.abs(h.durationS() - wantS) : 0;
@@ -176,6 +176,38 @@ public final class YtMusicLyricsClient {
 		}
 
 		return best;
+	}
+
+	/** Same title, or one contains the other and they're of similar length (not "Saki" vs "Saki & Baleszko Top 1"). */
+	static boolean titleMatches(String want, String got) {
+		if (want.isEmpty() || got.isEmpty()) return false;
+		if (want.equals(got)) return true;
+		String longer = want.length() >= got.length() ? want : got;
+		String shorter = longer == want ? got : want;
+		return longer.contains(shorter) && shorter.length() >= longer.length() * 0.6;
+	}
+
+	/**
+	 * Song title from a video title: "SAKI & BALESZKO TOP 1 (Official Music)" with artist
+	 * "Saki & Baleszko" → "TOP 1"; "Artist - Song (Official Video)" → "Song".
+	 */
+	static String songTitleFromVideo(String videoTitle, String artist) {
+		String t = videoTitle == null ? "" : videoTitle.replaceAll("\\s*[(\\[][^)\\]]*[)\\]]", "").strip();
+		String a = artist == null ? "" : artist.strip();
+		String[] parts = t.split("\\s+[-\u2013\u2014|:]\\s+", 2);
+
+		if (parts.length == 2) {
+			if (TitleCleaner.artistMatches(parts[0], a)) return parts[1].strip();
+			if (TitleCleaner.artistMatches(parts[1], a)) return parts[0].strip();
+		}
+
+		if (!a.isEmpty()) {
+			String plainT = TitleCleaner.stripDiacritics(t).toLowerCase(java.util.Locale.ROOT);
+			String plainA = TitleCleaner.stripDiacritics(a).toLowerCase(java.util.Locale.ROOT);
+			if (plainT.startsWith(plainA) && t.length() > a.length()) return t.substring(a.length()).replaceFirst("^[\\s\\-\u2013\u2014|:]+", "").strip();
+		}
+
+		return t;
 	}
 
 	/** The song's "Lyrics" tab id, or null if YouTube Music has no lyrics for it. */
@@ -227,7 +259,8 @@ public final class YtMusicLyricsClient {
 				sb.append(" {").append(tr == null ? "?" : str(nav(tr, "title"))).append(tr != null && tr.has("unselectable") ? " unselectable" : "").append('}');
 			}
 			if (info != null) {
-				Hit hit = findSong(new NowPlaying(info[0], info[1], "", 0, 0, true, 0));
+				sb.append(" songTitle=").append(songTitleFromVideo(info[0], info[1]));
+				Hit hit = findSong(new NowPlaying(songTitleFromVideo(info[0], info[1]), info[1], "", 0, 0, true, 0));
 				sb.append(" search=").append(hit == null ? "none" : hit.videoId() + " '" + hit.title() + "'");
 				if (hit != null) sb.append(" hitLyricsTab=").append(lyricsBrowseId(hit.videoId()) != null);
 			}
